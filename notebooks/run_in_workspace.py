@@ -19,13 +19,12 @@
 import os
 import sys
 
-dbutils.widgets.text("catalog", "na_act")  # noqa: F821
-dbutils.widgets.text("schema", "consd_sb")  # noqa: F821
+dbutils.widgets.text("catalog", "na_actuarial_explore")  # noqa: F821
+dbutils.widgets.text("schema", "consd_sb_actuarial_sandbox")  # noqa: F821
 dbutils.widgets.text("table", "", "Full table name (blank = <catalog>.<schema>.gl_master)")  # noqa: F821
 dbutils.widgets.text("sot_premium_table", "", "Premium source of truth (optional)")  # noqa: F821
 dbutils.widgets.text("sot_loss_table", "", "Loss source of truth (optional)")  # noqa: F821
-dbutils.widgets.text("knowledge_dir", "", "Volume path for statuses + notes (blank = /Volumes/<cat>/<schema>/gl_dq/knowledge)")  # noqa: F821
-dbutils.widgets.text("results_table", "", "Findings table (blank = <catalog>.<schema>.dq_check_results)")  # noqa: F821
+dbutils.widgets.text("volume_dir", "/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning", "Volume folder for statuses, notes and run history")  # noqa: F821
 dbutils.widgets.dropdown("create_volume", "no", ["no", "yes"], "Create the gl_dq volume if missing")  # noqa: F821
 
 catalog = dbutils.widgets.get("catalog")  # noqa: F821
@@ -33,8 +32,7 @@ schema = dbutils.widgets.get("schema")  # noqa: F821
 os.environ["DQ_PROFILE"] = "workspace"
 os.environ["DQ_CATALOG"], os.environ["DQ_SCHEMA"] = catalog, schema
 for widget, env in [("table", "DQ_TABLE"), ("sot_premium_table", "DQ_SOT_PREMIUM_TABLE"),
-                    ("sot_loss_table", "DQ_SOT_LOSS_TABLE"), ("knowledge_dir", "DQ_KNOWLEDGE_DIR"),
-                    ("results_table", "DQ_RESULTS_TABLE")]:
+                    ("sot_loss_table", "DQ_SOT_LOSS_TABLE"), ("volume_dir", "DQ_VOLUME_DIR")]:
     value = dbutils.widgets.get(widget)  # noqa: F821
     if value:
         os.environ[env] = value
@@ -53,12 +51,13 @@ print(f"table:     {p.table}")
 print(f"premium SOT: {p.sql_vars['sot_premium_table']}")
 print(f"loss SOT:    {p.sql_vars['sot_loss_table']}  (study window {p.sql_vars['study_from']} .. {p.sql_vars['study_to']})")
 print(f"knowledge: {p.knowledge_dir}")
-print(f"findings:  {p.results.table}")
+print(f"findings:  {p.results.path if p.results.type == 'parquet' else p.results.table}")
 print(f"reconciliation covers: {p.check_overrides.get('premium_recon', {}).get('where', 'all sources')}")
 
 # COMMAND ----------
 # Knowledge (statuses + notes) must outlive the cluster, so it lives in a UC volume.
 if dbutils.widgets.get("create_volume") == "yes":  # noqa: F821
+    # only needed if you do not already have a volume; the default path is an existing one
     spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.gl_dq")  # noqa: F821
     print("volume ready:", f"/Volumes/{catalog}/{schema}/gl_dq")
 

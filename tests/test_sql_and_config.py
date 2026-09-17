@@ -48,7 +48,8 @@ def test_prod_profile_parses(monkeypatch):
     monkeypatch.delenv("DQ_TABLE", raising=False)
     p = load_project("prod")
     assert p.table == "pricing_cat.gl.gl_master" and p.backend == "databricks"
-    assert p.config_dir == "/Volumes/pricing_cat/gl/gl_dq/config"
+    # config/knowledge/run history follow DQ_VOLUME_DIR, not the table's catalog
+    assert p.config_dir.endswith("/gl_master_cleaning/config")
     assert p.sql_vars["sot_premium_table"] == "cimm_csm.premium_transx_seg_enriched_2026q2"  # the pricing study
     assert p.sql_vars["study_from"] == "2014-01-01" and p.sql_vars["study_to"] == "2025-12-31"
     assert p.measures.claim_count == "claim_alloc"
@@ -95,23 +96,41 @@ def test_workspace_profile_inherits_prod(monkeypatch):
     assert w.backend == "spark" and prod.backend == "databricks"      # only the backend differs
     assert w.table == prod.table and w.measures == prod.measures
     assert w.sql_vars == prod.sql_vars and w.check_overrides == prod.check_overrides
-    assert w.results.table == "cat.sch.dq_check_results"
+    assert w.results == prod.results and w.results.type == "parquet"
     assert w.config_dir == "config"                                   # from the cloned repo
-    assert w.knowledge_dir == "/Volumes/cat/sch/gl_dq/knowledge"      # survives the cluster
+    assert w.knowledge_dir == f"{VOLUME}/knowledge"                   # survives the cluster
 
 
-def test_profiles_default_to_the_real_catalog_and_schema(monkeypatch):
-    """With no env set, both Databricks profiles must resolve to na_act.consd_sb (no empty path parts)."""
+VOLUME = "/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning"
+
+
+def test_profiles_default_to_the_real_catalog_schema_and_volume(monkeypatch):
+    """With no env set both Databricks profiles must resolve fully - no empty path segments."""
     from gl_dq.core.config import load_project
 
-    for var in ("DQ_CATALOG", "DQ_SCHEMA", "DQ_TABLE", "DQ_CONFIG_DIR", "DQ_KNOWLEDGE_DIR", "DQ_RESULTS_TABLE"):
+    for var in ("DQ_CATALOG", "DQ_SCHEMA", "DQ_TABLE", "DQ_CONFIG_DIR", "DQ_KNOWLEDGE_DIR", "DQ_RESULTS_PATH",
+                "DQ_VOLUME_DIR"):
         monkeypatch.delenv(var, raising=False)
     for name in ("prod", "workspace"):
         p = load_project(name)
-        assert p.table == "na_act.consd_sb.gl_master"
-        assert p.results.table == "na_act.consd_sb.dq_check_results"
-        assert p.knowledge_dir == "/Volumes/na_act/consd_sb/gl_dq/knowledge"
-        assert "//" not in p.knowledge_dir.replace("/Volumes", "") and "//" not in p.config_dir
+        assert p.table == "na_actuarial_explore.consd_sb_actuarial_sandbox.gl_master"
+        assert p.knowledge_dir == f"{VOLUME}/knowledge"      # a different catalog from the table: fine
+        assert p.results.type == "parquet" and p.results.path == VOLUME
+        for path in (p.knowledge_dir, p.config_dir, p.results.path):
+            assert "//" not in path.replace("/Volumes", "") and "${" not in path
+    assert load_project("prod").config_dir == f"{VOLUME}/config"
+
+
+def test_volume_dir_moves_everything_together(monkeypatch):
+    from gl_dq.core.config import load_project
+
+    for var in ("DQ_CONFIG_DIR", "DQ_KNOWLEDGE_DIR", "DQ_RESULTS_PATH"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("DQ_VOLUME_DIR", "/Volumes/other/vol/gl")
+    p = load_project("prod")
+    assert p.config_dir == "/Volumes/other/vol/gl/config"
+    assert p.knowledge_dir == "/Volumes/other/vol/gl/knowledge"
+    assert p.results.path == "/Volumes/other/vol/gl"
 
 
 def test_circular_profile_inheritance_is_rejected(tmp_path, monkeypatch):

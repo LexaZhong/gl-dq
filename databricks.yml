@@ -9,12 +9,18 @@ bundle:
 variables:
   catalog:
     description: Unity Catalog catalog holding gl_master
-    default: na_act
+    default: na_actuarial_explore
   schema:
     description: Schema holding gl_master (the volume and results table are created here)
-    default: consd_sb
+    default: consd_sb_actuarial_sandbox
   warehouse_id:
     description: SQL warehouse used by the app and the refresh job
+  volume_dir:
+    description: Volume folder for config, statuses, notes and run history
+    default: /Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning
+  volume_securable:
+    description: Full name of that volume, for the app's grant
+    default: na_combined_explore_rfnd-risk_cohort.risk-cohort-volume
 
 sync:
   exclude:
@@ -25,13 +31,6 @@ sync:
     - .pytest_cache/**
 
 resources:
-  volumes:
-    gl_dq:
-      catalog_name: ${var.catalog}
-      schema_name: ${var.schema}
-      name: gl_dq
-      comment: gl_dq check configs, SOT queries and the variable knowledge base (YAML)
-
   jobs:
     gl_dq_refresh:
       name: gl-dq-refresh
@@ -44,7 +43,7 @@ resources:
           spark_python_task:
             python_file: jobs/refresh.py
             parameters: [--profile, prod, --catalog, "${var.catalog}", --schema, "${var.schema}",
-                         --warehouse-id, "${var.warehouse_id}"]
+                         --warehouse-id, "${var.warehouse_id}", --volume-dir, "${var.volume_dir}"]
           environment_key: default
       environments:
         - environment_key: default
@@ -72,6 +71,8 @@ resources:
             value: ${var.catalog}
           - name: DQ_SCHEMA
             value: ${var.schema}
+          - name: DQ_VOLUME_DIR
+            value: ${var.volume_dir}
           - name: DATABRICKS_WAREHOUSE_ID
             valueFrom: sql-warehouse
           - name: DQ_REFRESH_JOB_ID
@@ -87,7 +88,7 @@ resources:
             permission: CAN_MANAGE_RUN
         - name: gl-dq-volume        # requires a recent Databricks CLI; otherwise use the GRANTs in README
           uc_securable:
-            securable_full_name: ${var.catalog}.${var.schema}.gl_dq
+            securable_full_name: ${var.volume_securable}
             securable_type: VOLUME
             permission: WRITE_VOLUME
 

@@ -2,10 +2,11 @@
 # Env vars are set by the Databricks App (databricks.yml -> apps.config.env) and by the refresh job.
 # To dry-run against the synthetic tables on Databricks: DQ_TABLE=<cat>.<schema>.gl_master_synth
 name: GL master
-# defaults below are na_act.consd_sb; override per environment with DQ_CATALOG / DQ_SCHEMA
+# Defaults: table in na_actuarial_explore.consd_sb_actuarial_sandbox, everything the dashboard
+# writes under the risk-cohort volume. Override with DQ_CATALOG / DQ_SCHEMA / DQ_VOLUME_DIR.
 backend: databricks
 warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
-table: ${DQ_TABLE:-${DQ_CATALOG:-na_act}.${DQ_SCHEMA:-consd_sb}.gl_master}
+table: ${DQ_TABLE:-${DQ_CATALOG:-na_actuarial_explore}.${DQ_SCHEMA:-consd_sb_actuarial_sandbox}.gl_master}
 src_col: src
 sources: [BOP, BMQ, CMQ]
 
@@ -30,11 +31,13 @@ sql_vars:                          # referenced by the SOT queries in <config_di
   study_to: ${DQ_STUDY_TO:-2025-12-31}
 
 # config + knowledge live in the UC Volume; override with DQ_CONFIG_DIR=config to dry-run from a laptop
-config_dir: ${DQ_CONFIG_DIR:-/Volumes/${DQ_CATALOG:-na_act}/${DQ_SCHEMA:-consd_sb}/gl_dq/config}
-knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG:-na_act}/${DQ_SCHEMA:-consd_sb}/gl_dq/knowledge}
+config_dir: ${DQ_CONFIG_DIR:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/config}
+knowledge_dir: ${DQ_KNOWLEDGE_DIR:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/knowledge}
+# Everything the dashboard writes (statuses, notes, run history) lives in one volume folder, so it
+# survives clusters and app restarts and can sit in a different catalog from gl_master.
 results:
-  type: delta
-  table: ${DQ_RESULTS_TABLE:-${DQ_CATALOG:-na_act}.${DQ_SCHEMA:-consd_sb}.dq_check_results}
+  type: parquet                     # one parquet file per run under <volume>/runs
+  path: ${DQ_RESULTS_PATH:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}}
 refresh_job_id: ${DQ_REFRESH_JOB_ID}
 
 # The pricing study covers BMQ and CMQ only, has no coverage split, and is limited to policies

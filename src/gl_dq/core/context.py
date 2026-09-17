@@ -89,7 +89,6 @@ def load_context(profile: str | None = None) -> Context:
     if project.results.type == "delta":
         results = DeltaResults(db, project.results.table)
     else:
-        p = Path(project.results.path)
-        results = ParquetResults(p if p.is_absolute() else REPO_ROOT / p)
+        results = ParquetResults(make_storage(project.results.path, REPO_ROOT))
     checks = discover(project.plugins)
     return Context(profile, project, db, schema, config_store, knowledge, results, checks, load_workflow(config_store))

@@ -7,8 +7,8 @@
 # MAGIC    `DQ_SOT_PREMIUM_TABLE=...sot_premium_synth`, `DQ_SOT_LOSS_TABLE=...sot_loss_synth`.
 
 # COMMAND ----------
-dbutils.widgets.text("catalog", "na_act")  # noqa: F821
-dbutils.widgets.text("schema", "consd_sb")  # noqa: F821
+dbutils.widgets.text("catalog", "na_actuarial_explore")  # noqa: F821
+dbutils.widgets.text("schema", "consd_sb_actuarial_sandbox")  # noqa: F821
 catalog = dbutils.widgets.get("catalog")  # noqa: F821
 schema = dbutils.widgets.get("schema")  # noqa: F821
 src = f"/Volumes/{catalog}/{schema}/gl_dq/synthetic"

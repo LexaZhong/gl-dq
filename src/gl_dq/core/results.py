@@ -1,6 +1,7 @@
 """Findings: the common long-format output of every check, and their run history store."""
 from __future__ import annotations
 
+import io
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -93,19 +94,27 @@ class ResultsStore(ABC):
 
 
 class ParquetResults(ResultsStore):
-    def __init__(self, path: Path):
-        self.path = Path(path)
+    """One parquet file per run, in a local directory or a Unity Catalog volume.
+
+    Goes through Storage rather than the filesystem, so the same store works from a notebook,
+    a job and a Databricks App (where /Volumes is reachable only through the Files API).
+    """
+
+    def __init__(self, storage, prefix: str = "runs"):
+        self.storage, self.prefix = storage, prefix.strip("/")
 
     def append(self, findings, run_id, run_ts, profile):
-        self.path.mkdir(parents=True, exist_ok=True)
         out = findings.assign(run_id=run_id, run_ts=run_ts, profile=profile)
-        out.astype({"detail": "string", "item": "string"}).to_parquet(self.path / f"findings_{run_id}.parquet", index=False)
+        buf = io.BytesIO()
+        out.astype({"detail": "string", "item": "string"}).to_parquet(buf, index=False)
+        self.storage.write_bytes(f"{self.prefix}/findings_{run_id}.parquet", buf.getvalue())
 
     def load(self):
-        files = sorted(self.path.glob("findings_*.parquet")) if self.path.exists() else []
-        if not files:
+        files = sorted(self.storage.list(self.prefix, ".parquet"))
+        frames = [pd.read_parquet(io.BytesIO(b)) for b in (self.storage.read_bytes(f) for f in files) if b]
+        if not frames:
             return pd.DataFrame(columns=FINDING_COLS + ["run_id", "run_ts", "profile"])
-        return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+        return pd.concat(frames, ignore_index=True)
 
 
 class DeltaResults(ResultsStore):

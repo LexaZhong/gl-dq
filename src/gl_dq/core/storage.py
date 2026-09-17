@@ -24,13 +24,19 @@ class Storage(ABC):
     def version(self, path: str) -> str | None:
         """Opaque change token (modification time); None if the file does not exist."""
 
+    def read_bytes(self, path: str) -> bytes | None:
+        raise NotImplementedError
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        raise NotImplementedError
+
 
 class LocalStorage(Storage):
     def __init__(self, root: str | Path):
         self.root = Path(root)
 
     def _p(self, path: str) -> Path:
-        return self.root / path
+        return self.root / path if path else self.root
 
     def read_text(self, path):
         p = self._p(path)
@@ -43,11 +49,23 @@ class LocalStorage(Storage):
         tmp.write_text(text)
         os.replace(tmp, p)
 
+    def read_bytes(self, path):
+        p = self._p(path)
+        return p.read_bytes() if p.exists() else None
+
+    def write_bytes(self, path, data):
+        p = self._p(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, p)
+
     def list(self, prefix, suffix=""):
         d = self._p(prefix)
         if not d.is_dir():
             return []
-        return sorted(f"{prefix}/{f.name}" for f in d.iterdir() if f.is_file() and f.name.endswith(suffix))
+        return sorted(f"{prefix}/{f.name}" if prefix else f.name
+                      for f in d.iterdir() if f.is_file() and f.name.endswith(suffix))
 
     def version(self, path):
         p = self._p(path)
@@ -67,7 +85,7 @@ class VolumeStorage(Storage):
         self.w = WorkspaceClient()
 
     def _p(self, path: str) -> str:
-        return f"{self.root}/{path}"
+        return f"{self.root}/{path}" if path else self.root
 
     def read_text(self, path):
         from databricks.sdk.errors import NotFound
@@ -80,12 +98,24 @@ class VolumeStorage(Storage):
     def write_text(self, path, text):
         self.w.files.upload(self._p(path), io.BytesIO(text.encode()), overwrite=True)
 
+    def read_bytes(self, path):
+        from databricks.sdk.errors import NotFound
+
+        try:
+            return self.w.files.download(self._p(path)).contents.read()
+        except NotFound:
+            return None
+
+    def write_bytes(self, path, data):
+        self.w.files.upload(self._p(path), io.BytesIO(data), overwrite=True)
+
     def list(self, prefix, suffix=""):
         from databricks.sdk.errors import NotFound
 
         try:
             entries = self.w.files.list_directory_contents(self._p(prefix))
-            return sorted(f"{prefix}/{e.name}" for e in entries if not e.is_directory and e.name.endswith(suffix))
+            return sorted(f"{prefix}/{e.name}" if prefix else e.name
+                          for e in entries if not e.is_directory and e.name.endswith(suffix))
         except NotFound:
             return []
 

@@ -84,6 +84,9 @@ the second person gets a warning instead of silently overwriting the first perso
 | `gl-dq-new-project` | point the framework at another master table |
 | `gl-dq-refresh` | validate, deploy, run the refresh job, and report what changed |
 
+Storage note: findings are parquet files in the volume (`results.type: parquet`), not a Delta table,
+so nothing needs CREATE TABLE in the sandbox schema. Switch with `results: {type: delta, table: ...}`.
+
 They load automatically when Claude Code is opened in this repo. To share them more widely, copy them to
 `~/.claude/skills/` or package them as a plugin.
 
@@ -128,8 +131,7 @@ pip install -e ".[databricks]"              # databricks-sql-connector + sdk for
 **1. Point it at the real table from your laptop first** — read-only, nothing is deployed, and it
 tells you whether the config matches `gl_master` before anything else:
 ```bash
-export DATABRICKS_WAREHOUSE_ID=<sql warehouse id>
-export DQ_CATALOG=<catalog> DQ_SCHEMA=<schema>
+export DATABRICKS_WAREHOUSE_ID=<sql warehouse id>   # catalog/schema/volume already default to yours
 python jobs/check_setup.py --profile prod            # verifies every configured column, source and SOT query
 DQ_PROFILE=prod DQ_CONFIG_DIR=config DQ_KNOWLEDGE_DIR=data/knowledge_prod \
   streamlit run app/app.py                           # the whole dashboard, live on gl_master
@@ -154,10 +156,22 @@ in dimensions and a coarser-grained study, and prints the same numbers the dashb
 ```bash
 databricks bundle validate -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
 databricks bundle deploy   -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
-python jobs/seed_volume.py --catalog <cat> --schema <schema>   # copies configs + SOT SQL into the volume
+python jobs/seed_volume.py --profile prod                      # copies configs + SOT SQL into the volume
 ```
 The volume copy is the live config people edit from the app; `seed_volume.py` never overwrites existing
 files unless you pass `--overwrite`.
+
+**Where things are stored** (defaults; move them all with `DQ_VOLUME_DIR`):
+
+| What | Where |
+|---|---|
+| Table | `na_actuarial_explore.consd_sb_actuarial_sandbox.gl_master` |
+| Check configs + SOT SQL | `<volume>/gl_master_cleaning/config` |
+| Statuses, notes, preprocessing | `<volume>/gl_master_cleaning/knowledge` |
+| Run history (one parquet per run) | `<volume>/gl_master_cleaning/runs` |
+
+`<volume>` is `/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL`, i.e. a different
+catalog from the table - that is fine, nothing but the volume grant is needed there.
 
 **3. Grant the app's service principal access** (skip if the bundle's `uc_securable` resource worked)
 ```sql

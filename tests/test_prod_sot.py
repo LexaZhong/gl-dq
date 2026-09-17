@@ -42,7 +42,7 @@ def prod(monkeypatch, tmp_path):
     p = load_project("prod")
     return Context("prod", p, FakeDB(), TableSchema(p.table, dict.fromkeys(COLUMNS, "string"), p.derived_columns,
                                                     DatabricksDialect()),
-                   LocalStorage(ROOT / "config"), KnowledgeStore(LocalStorage(tmp_path)), ParquetResults(tmp_path),
+                   LocalStorage(ROOT / "config"), KnowledgeStore(LocalStorage(tmp_path)), ParquetResults(LocalStorage(tmp_path)),
                    discover(), Workflow())
 
 

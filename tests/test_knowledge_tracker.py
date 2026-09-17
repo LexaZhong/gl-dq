@@ -23,6 +23,26 @@ def wf():
     return Workflow()
 
 
+def test_parquet_results_round_trip_through_storage(tmp_path):
+    """Run history must work on a volume too, where files go through the Files API, not the filesystem."""
+    import pandas as pd
+
+    from gl_dq.core.results import ParquetResults
+
+    store = ParquetResults(LocalStorage(tmp_path))
+    assert store.load().empty and store.latest().empty
+    findings = pd.DataFrame([dict(check="missing_rate", variable="a", item=None, segment="src=BOP", metric="m",
+                                  value=0.3, threshold=0.2, status="fail", detail="3 of 10")])
+    store.append(findings, "run1", "2026-09-17T10:00:00Z", "prod")
+    store.append(findings.assign(status="pass", value=0.0), "run2", "2026-09-17T11:00:00Z", "prod")
+    assert sorted(p.name for p in (tmp_path / "runs").glob("*.parquet")) == \
+        ["findings_run1.parquet", "findings_run2.parquet"]
+    runs = store.runs()
+    assert list(runs["run_id"]) == ["run1", "run2"] and list(runs["n_fail"]) == [1, 0]
+    assert store.latest()["status"].tolist() == ["pass"]
+    assert store.latest(1)["status"].tolist() == ["fail"]
+
+
 def test_workflow_yaml_matches_and_validates():
     wf = Workflow.model_validate(yaml.safe_load((ROOT / "config" / "workflow.yaml").read_text()))
     assert wf.keys() == Workflow().keys()

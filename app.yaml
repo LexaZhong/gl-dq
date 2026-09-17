@@ -5,9 +5,9 @@ env:
   - name: DQ_PROFILE
     value: prod
   - name: DQ_CATALOG
-    value: na_act
+    value: na_actuarial_explore
   - name: DQ_SCHEMA
-    value: consd_sb
+    value: consd_sb_actuarial_sandbox
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
   - name: DQ_REFRESH_JOB_ID

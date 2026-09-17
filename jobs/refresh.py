@@ -24,8 +24,10 @@ def main(argv=None):
     p.add_argument("--catalog", help="sets DQ_CATALOG (prod profile)")
     p.add_argument("--schema", help="sets DQ_SCHEMA (prod profile)")
     p.add_argument("--warehouse-id", help="sets DATABRICKS_WAREHOUSE_ID (prod profile)")
+    p.add_argument("--volume-dir", help="sets DQ_VOLUME_DIR (config, knowledge and run history)")
     args = p.parse_args(argv)
-    for env, val in [("DQ_CATALOG", args.catalog), ("DQ_SCHEMA", args.schema), ("DATABRICKS_WAREHOUSE_ID", args.warehouse_id)]:
+    for env, val in [("DQ_CATALOG", args.catalog), ("DQ_SCHEMA", args.schema),
+                     ("DATABRICKS_WAREHOUSE_ID", args.warehouse_id), ("DQ_VOLUME_DIR", args.volume_dir)]:
         if val:
             os.environ[env] = val
     ctx = load_context(args.profile)
