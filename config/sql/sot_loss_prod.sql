@@ -13,6 +13,10 @@
 -- things, either change sot_claim_count_col or widen tolerance_claims and say so in a note.
 --
 -- BOP: not covered yet (see the premium file).
+--
+-- Source: cimm_csm.loss_transx_seg_enriched_2026q2 (profile sql_vars -> sot_loss_table).
+-- The policy filter uses POLHLDR_CONTR_ID and CONTR_EFF_DT, so those columns must exist in the
+-- loss table too; if they are named differently there, adjust the WHERE clause below.
 -- ============================================================================
 
 SELECT

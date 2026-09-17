@@ -24,8 +24,7 @@ segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, loc_st_abbr,
 
 sql_vars:                          # referenced by the SOT queries in <config_dir>/sql/*.sql
   sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-cimm_csm.premium_transx_seg_enriched_2026q2}
-  # TODO confirm: RLA / OCUR_ID / EVT_DT may live in a claims table rather than the premium one
-  sot_loss_table: ${DQ_SOT_LOSS_TABLE:-cimm_csm.premium_transx_seg_enriched_2026q2}
+  sot_loss_table: ${DQ_SOT_LOSS_TABLE:-cimm_csm.loss_transx_seg_enriched_2026q2}
   study_from: ${DQ_STUDY_FROM:-2014-01-01}    # policy effective-date window of the study
   study_to: ${DQ_STUDY_TO:-2025-12-31}
 

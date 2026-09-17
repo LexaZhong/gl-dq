@@ -68,6 +68,8 @@ def test_loss_sot_matches_its_config(prod):
     sql = prod.render_user_sql(cfg.sot_query)
     assert aliases(sql) >= set(dims) | {cfg.sot_loss_col, cfg.sot_claim_count_col}
     assert "YEAR(EVT_DT)" in sql, "loss year must use the same event-date basis as the pipeline"
+    assert "cimm_csm.loss_transx_seg_enriched_2026q2" in sql, "losses come from the loss table, not the premium one"
+    assert "cat.sch.gl_master" in sql
     assert cfg.tolerance_claims.pct >= 0.05, "distinct occurrences vs allocated counts need a wider tolerance"
 
 
