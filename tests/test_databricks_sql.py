@@ -56,6 +56,7 @@ def test_databricks_sql_has_no_duckdb_syntax(dbx_ctx):
                     chk.histogram(spec)
     assert dbx_ctx.db.sql
     for sql in dbx_ctx.db.sql:
-        body = re.sub(r"'[^']*'", "''", sql)  # ignore string literals
+        body = re.sub(r"--[^\n]*", "", sql)  # ignore SQL comments (the SOT files document examples there)
+        body = re.sub(r"'[^']*'", "''", body)  # and string literals
         for pat in DUCKDB_ONLY:
             assert not re.search(pat, body), f"{pat} in:\n{sql}"
