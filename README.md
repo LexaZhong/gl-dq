@@ -61,6 +61,7 @@ src/gl_dq/tracker.py             review progress + "re-opened by data" logic
 src/gl_dq/ui/                    Streamlit frame, notes panel, chart theme
 jobs/refresh.py                  runs all checks and appends findings (parquet locally, Delta on Databricks)
 jobs/check_setup.py              preflight: does the profile match the real table?
+jobs/validate_sot.py             checks a source-of-truth query and prints a comparison SQL
 notebooks/run_in_workspace.py    run the checks from a Databricks notebook (Spark backend)
 jobs/seed_volume.py              copies configs + SOT SQL into the UC volume
 .claude/skills/                  Claude Code skills (below)
@@ -133,6 +134,17 @@ Fix whatever preflight reports in `config/profiles/prod.yaml` (measures, derived
 segment candidates) and in `config/checks/*.yaml` (candidate keys, `applies_when` predicates, business
 rules), then fill in `config/sql/sot_premium.sql` and `config/sql/sot_loss.sql` with the pricing-study
 queries. Re-run preflight until it is clean.
+
+**1b. Fill in the source-of-truth queries**
+`config/sql/sot_premium.sql` and `config/sql/sot_loss.sql` must return the reconciliation dimensions
+(named like the pipeline columns, or mapped with `dim_map`) plus the measure columns. Both files carry
+the contract and worked examples in their header. Then check them:
+```bash
+python jobs/validate_sot.py --profile prod --check both              # columns, grain, totals, biggest breaks
+python jobs/validate_sot.py --profile prod --check premium_recon --print-sql   # SQL to paste in the SQL editor
+```
+It names the exact fix when a dimension is missing (add it, drop it from `dims`, or map it), flags nulls
+in dimensions and a coarser-grained study, and prints the same numbers the dashboard will show.
 
 **2. Deploy the bundle** (creates the UC volume, the refresh job and the Databricks App)
 ```bash

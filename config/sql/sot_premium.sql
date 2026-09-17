@@ -1,7 +1,44 @@
--- Source of truth: written premium from the pricing study.
--- Must return one row per grain with columns named like the pipeline dimensions
--- (src, covg_type_desc, pol_yr, ...) plus the measure column set in premium_recon.yaml (sot_measure).
--- Jinja variables come from the profile's sql_vars; {{ table }} is the pipeline table.
--- TODO(prod): replace with the pricing study query.
+-- ============================================================================
+-- SOURCE OF TRUTH: written premium from the pricing study.
+--
+-- Contract (checked by `python jobs/validate_sot.py --check premium_recon`):
+--   * one column per dimension in premium_recon.yaml -> dims  (default: src, covg_type_desc)
+--     named exactly like the pipeline column, or mapped in premium_recon.yaml -> dim_map
+--   * one measure column named in premium_recon.yaml -> sot_measure  (default: wrtn_prm)
+--   * any grain at least as fine as `dims` - finer is fine, rows are summed
+--   * no WHERE that the pipeline side doesn't also have (premium_recon.yaml -> where)
+--
+-- Jinja: {{ sot_premium_table }} and other profile `sql_vars`; {{ table }} = the pipeline table.
+--
+-- TODO(prod): replace the query below with the pricing study.
+-- ============================================================================
+
 SELECT src, covg_type_desc, pol_yr, wrtn_prm
 FROM {{ sot_premium_table }}
+
+-- ---------------------------------------------------------------------------
+-- Worked examples
+--
+-- 1. Study table with different column names -> map them in premium_recon.yaml:
+--        dim_map: {src: source_system, covg_type_desc: coverage}
+--        sot_measure: written_premium
+--    SELECT source_system, coverage, written_premium
+--    FROM pricing.study.gl_premium_2026
+--
+-- 2. Study is only at source x policy-year grain (no coverage):
+--    set premium_recon.yaml -> dims: [src, pol_yr], otherwise every row shows as "no SOT".
+--    SELECT src, policy_year AS pol_yr, SUM(written_premium) AS wrtn_prm
+--    FROM pricing.study.gl_premium_2026
+--    GROUP BY 1, 2
+--
+-- 3. Study needs filtering or a derived year, and excludes cancellations:
+--    the pipeline side must match, so set premium_recon.yaml -> where: "tx_type_nm <> 'Cancellation'"
+--    SELECT src, covg_type_desc, YEAR(effective_date) AS pol_yr, SUM(premium) AS wrtn_prm
+--    FROM pricing.study.gl_detail
+--    WHERE study_version = 'FINAL' AND transaction_type <> 'CANCEL'
+--    GROUP BY 1, 2, 3
+--
+-- 4. Study lives in a spreadsheet: load it to a table once
+--    (notebook: spark.read.format("csv").option("header", True).load("/Volumes/.../study.csv")
+--     .write.saveAsTable("pricing.study.gl_premium_2026")), then use example 1.
+-- ---------------------------------------------------------------------------

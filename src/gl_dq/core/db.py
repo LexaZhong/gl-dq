@@ -26,6 +26,10 @@ class Dialect:
     def distinct_list(self, expr: str) -> str:
         raise NotImplementedError
 
+    def null_safe_eq(self, a: str, b: str) -> str:
+        """Equality that treats NULL = NULL as true (dimension values are often null)."""
+        raise NotImplementedError
+
     @staticmethod
     def lit(value) -> str:
         """SQL literal for a config/UI supplied value."""
@@ -53,6 +57,9 @@ class DuckDBDialect(Dialect):
     def distinct_list(self, expr):
         return f"string_agg(DISTINCT {expr}, ', ')"
 
+    def null_safe_eq(self, a, b):
+        return f"{a} IS NOT DISTINCT FROM {b}"
+
 
 class DatabricksDialect(Dialect):
     name = "databricks"
@@ -68,6 +75,9 @@ class DatabricksDialect(Dialect):
 
     def distinct_list(self, expr):
         return f"array_join(array_sort(collect_set({expr})), ', ')"
+
+    def null_safe_eq(self, a, b):
+        return f"{a} <=> {b}"
 
 
 class Database(ABC):

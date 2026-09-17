@@ -1,6 +1,7 @@
 {# Portfolio summary: record count, distinct policy terms and premium, at one grouping level #}
 SELECT
   {% for g in dims %}{{ sel(g) }}, {% endfor %}
+
   COUNT(*) AS records,
   COUNT(DISTINCT {{ dialect.row(policy_key) }}) AS policies,
   SUM({{ premium }}) AS premium
