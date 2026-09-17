@@ -49,8 +49,11 @@ def test_prod_profile_parses(monkeypatch):
     p = load_project("prod")
     assert p.table == "pricing_cat.gl.gl_master" and p.backend == "databricks"
     assert p.config_dir == "/Volumes/pricing_cat/gl/gl_dq/config"
-    assert p.sql_vars["sot_premium_table"] == "pricing_cat.gl.sot_premium"
+    assert p.sql_vars["sot_premium_table"] == "cimm_csm.premium_transx_seg_enriched_2026q2"  # the pricing study
+    assert p.sql_vars["study_from"] == "2014-01-01" and p.sql_vars["study_to"] == "2025-12-31"
     assert p.measures.claim_count == "claim_alloc"
+    monkeypatch.setenv("DQ_SOT_PREMIUM_TABLE", "other.study.table")  # still overridable per environment
+    assert load_project("prod").sql_vars["sot_premium_table"] == "other.study.table"
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "config" / "checks").glob("*.yaml")), ids=lambda p: p.stem)

@@ -36,6 +36,7 @@ class LossRecon(Check):
         sot_loss_col: str = "allocation"
         sot_claim_count_col: str = "claim_alloc"
         dim_map: dict[str, str] = {}
+        where: str | None = None  # pipeline filter, to match what the source of truth covers
         tolerance_loss: Tolerance = Tolerance(abs=5000, pct=0.02)
         tolerance_claims: Tolerance = Tolerance(abs=5, pct=0.02)
         analytics: Analytics = Analytics()
@@ -49,7 +50,9 @@ class LossRecon(Check):
         s = self.schema
         dims = list(dict.fromkeys(self.cfg.segments + [self.cfg.time_dim]))
         loss, cnt = s.ref(self.m.loss), s.ref(self.m.claim_count)
-        where = f"COALESCE({loss}, 0) <> 0 OR COALESCE({cnt}, 0) <> 0"
+        where = f"(COALESCE({loss}, 0) <> 0 OR COALESCE({cnt}, 0) <> 0)"
+        if self.cfg.where:
+            where = f"{where} AND ({self.cfg.where})"
         pipe = pipeline_agg(self, dims, {"loss": loss, "claim_count": cnt}, where)
         sot_sql = self.ctx.render_user_sql(self.cfg.sot_query)
         sot = sot_agg(self, sot_sql, dims, self.cfg.dim_map,
@@ -67,7 +70,7 @@ class LossRecon(Check):
         out = {}
         lr_dims = list(dict.fromkeys(segs + [a.lr_basis]))
         df = pipeline_agg(self, lr_dims, {"premium": s.ref(m.written_premium), "loss": s.ref(m.loss),
-                                          "claims": s.ref(m.claim_count)}, label="loss ratio / severity")
+                                          "claims": s.ref(m.claim_count)}, self.cfg.where, label="loss ratio / severity")
         with np.errstate(divide="ignore", invalid="ignore"):
             df["loss_ratio"] = np.where(df["premium"] > 0, df["loss"] / df["premium"], np.nan)
             df["severity"] = np.where(df["claims"] > 0, df["loss"] / df["claims"], np.nan)
@@ -75,7 +78,7 @@ class LossRecon(Check):
 
         f_dims = list(dict.fromkeys(segs + [m.exposure_base]))
         fq = pipeline_agg(self, f_dims, {"claims": s.ref(m.claim_count), "exposure": s.ref(m.exposure)},
-                          label="frequency")
+                          self.cfg.where, label="frequency")
         with np.errstate(divide="ignore", invalid="ignore"):
             fq["frequency"] = np.where(fq["exposure"] > 0, fq["claims"] / fq["exposure"] * a.frequency_per, np.nan)
         out["frequency"] = fq.sort_values(f_dims)
