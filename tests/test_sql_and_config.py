@@ -80,3 +80,33 @@ def test_config_roundtrip(ctx_injected, tmp_path):
 def test_page_order(ctx_injected):
     assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "distribution",
                                              "premium_recon", "loss_recon", "exposure"]
+
+
+def test_workspace_profile_inherits_prod(monkeypatch):
+    """The notebook profile must pick up prod's table, source-of-truth queries and overrides."""
+    from gl_dq.core.config import load_project
+
+    monkeypatch.setenv("DQ_CATALOG", "cat")
+    monkeypatch.setenv("DQ_SCHEMA", "sch")
+    monkeypatch.setenv("DQ_CONFIG_DIR", "config")
+    for var in ("DQ_TABLE", "DQ_KNOWLEDGE_DIR", "DQ_RESULTS_TABLE"):
+        monkeypatch.delenv(var, raising=False)
+    w, prod = load_project("workspace"), load_project("prod")
+    assert w.backend == "spark" and prod.backend == "databricks"      # only the backend differs
+    assert w.table == prod.table and w.measures == prod.measures
+    assert w.sql_vars == prod.sql_vars and w.check_overrides == prod.check_overrides
+    assert w.results.table == "cat.sch.dq_check_results"
+    assert w.config_dir == "config"                                   # from the cloned repo
+    assert w.knowledge_dir == "/Volumes/cat/sch/gl_dq/knowledge"      # survives the cluster
+
+
+def test_circular_profile_inheritance_is_rejected(tmp_path, monkeypatch):
+    import pytest as _pytest
+    import yaml as _yaml
+
+    from gl_dq.core.config import load_raw_profile
+
+    (tmp_path / "a.yaml").write_text(_yaml.safe_dump({"extends": str(tmp_path / "b.yaml"), "table": "t"}))
+    (tmp_path / "b.yaml").write_text(_yaml.safe_dump({"extends": str(tmp_path / "a.yaml")}))
+    with _pytest.raises(ValueError, match="circular"):
+        load_raw_profile(str(tmp_path / "a.yaml"))

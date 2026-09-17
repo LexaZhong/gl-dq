@@ -93,7 +93,11 @@ Three ways, from least to most permission needed.
 
 **A. Notebook (no warehouse, no app, nothing to deploy)** — runs the checks on the cluster's Spark session:
 1. Workspace → Create → **Git folder**, URL `https://github.com/LexaZhong/gl-dq`.
-2. Open `notebooks/run_in_workspace.py`, attach a cluster (DBR 14+), fill in the catalog/schema widgets, Run All.
+2. Open `notebooks/run_in_workspace.py`, attach a cluster (DBR 14+), fill in the widgets
+   (catalog, schema, and the volume path for statuses/notes), Run All.
+The `workspace` profile `extends: prod`, so the table, measures, pricing-study queries and check
+overrides are inherited — only the backend (Spark instead of a SQL warehouse) and the config/knowledge
+locations differ.
 It runs preflight, then every check, writes findings to `<catalog>.<schema>.dq_check_results` and displays the
 flagged rows and the portfolio summary. Statuses and notes go to a UC volume (`gl_dq`) so they outlive the cluster;
 the notebook can create it for you. What you do **not** get here is the dashboard UI: Streamlit cannot render in a

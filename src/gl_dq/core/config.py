@@ -103,10 +103,18 @@ def profile_path(profile: str) -> Path:
     return REPO_ROOT / "config" / "profiles" / f"{profile}.yaml"
 
 
+def load_raw_profile(profile: str, _seen: tuple[str, ...] = ()) -> dict:
+    """Profile YAML, with `extends: <other profile>` merged underneath it (deep merge, child wins)."""
+    if profile in _seen:
+        raise ValueError(f"circular profile inheritance: {' -> '.join([*_seen, profile])}")
+    raw = yaml.safe_load(profile_path(profile).read_text()) or {}
+    base = raw.pop("extends", None)
+    return deep_merge(load_raw_profile(base, (*_seen, profile)), raw) if base else raw
+
+
 def load_project(profile: str | None = None) -> ProjectConfig:
     profile = profile or os.environ.get("DQ_PROFILE", "synthetic")
-    raw = yaml.safe_load(profile_path(profile).read_text()) or {}
-    return ProjectConfig.model_validate(_expand(raw))
+    return ProjectConfig.model_validate(_expand(load_raw_profile(profile)))
 
 
 def dump_yaml(data: dict) -> str:

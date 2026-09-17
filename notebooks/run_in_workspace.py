@@ -24,6 +24,8 @@ dbutils.widgets.text("schema", "pricing")  # noqa: F821
 dbutils.widgets.text("table", "", "Full table name (blank = <catalog>.<schema>.gl_master)")  # noqa: F821
 dbutils.widgets.text("sot_premium_table", "", "Premium source of truth (optional)")  # noqa: F821
 dbutils.widgets.text("sot_loss_table", "", "Loss source of truth (optional)")  # noqa: F821
+dbutils.widgets.text("knowledge_dir", "", "Volume path for statuses + notes (blank = /Volumes/<cat>/<schema>/gl_dq/knowledge)")  # noqa: F821
+dbutils.widgets.text("results_table", "", "Findings table (blank = <catalog>.<schema>.dq_check_results)")  # noqa: F821
 dbutils.widgets.dropdown("create_volume", "no", ["no", "yes"], "Create the gl_dq volume if missing")  # noqa: F821
 
 catalog = dbutils.widgets.get("catalog")  # noqa: F821
@@ -31,7 +33,8 @@ schema = dbutils.widgets.get("schema")  # noqa: F821
 os.environ["DQ_PROFILE"] = "workspace"
 os.environ["DQ_CATALOG"], os.environ["DQ_SCHEMA"] = catalog, schema
 for widget, env in [("table", "DQ_TABLE"), ("sot_premium_table", "DQ_SOT_PREMIUM_TABLE"),
-                    ("sot_loss_table", "DQ_SOT_LOSS_TABLE")]:
+                    ("sot_loss_table", "DQ_SOT_LOSS_TABLE"), ("knowledge_dir", "DQ_KNOWLEDGE_DIR"),
+                    ("results_table", "DQ_RESULTS_TABLE")]:
     value = dbutils.widgets.get(widget)  # noqa: F821
     if value:
         os.environ[env] = value
@@ -41,7 +44,17 @@ notebook = dbutils.notebook.entry_point.getDbutils().notebook().getContext().not
 ROOT = os.path.dirname(os.path.dirname("/Workspace" + notebook))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 os.environ["DQ_CONFIG_DIR"] = os.path.join(ROOT, "config")
-print("repo:", ROOT, "\ntable:", os.environ.get("DQ_TABLE", f"{catalog}.{schema}.gl_master"))
+# the workspace profile inherits table, measures, source-of-truth queries and check overrides from prod
+from gl_dq.core.config import load_project  # noqa: E402
+
+p = load_project("workspace")
+print(f"repo:      {ROOT}")
+print(f"table:     {p.table}")
+print(f"premium SOT: {p.sql_vars['sot_premium_table']}")
+print(f"loss SOT:    {p.sql_vars['sot_loss_table']}  (study window {p.sql_vars['study_from']} .. {p.sql_vars['study_to']})")
+print(f"knowledge: {p.knowledge_dir}")
+print(f"findings:  {p.results.table}")
+print(f"reconciliation covers: {p.check_overrides.get('premium_recon', {}).get('where', 'all sources')}")
 
 # COMMAND ----------
 # Knowledge (statuses + notes) must outlive the cluster, so it lives in a UC volume.
@@ -50,7 +63,11 @@ if dbutils.widgets.get("create_volume") == "yes":  # noqa: F821
     print("volume ready:", f"/Volumes/{catalog}/{schema}/gl_dq")
 
 # COMMAND ----------
-# MAGIC %md ## 1. Preflight: does the config match the real table?
+# MAGIC %md
+# MAGIC ## 1. Preflight
+# MAGIC Does the config match the real table, and do the pricing-study queries work?
+# MAGIC The source of truth currently covers **BMQ and CMQ only** - BOP is filtered out of both sides
+# MAGIC until a BOP study exists.
 
 # COMMAND ----------
 sys.path.insert(0, os.path.join(ROOT, "jobs"))
@@ -60,6 +77,14 @@ try:
     check_setup.main(["--profile", "workspace"])
 except SystemExit as e:
     print(f"\nPreflight found problems (exit {e.code}). Fix them in config/ before going further.")
+
+# COMMAND ----------
+import validate_sot  # noqa: E402
+
+try:
+    validate_sot.main(["--profile", "workspace", "--check", "both"])
+except SystemExit as e:
+    print(f"\nSource-of-truth problems (exit {e.code}): fix config/sql/sot_*_prod.sql or the dim_map.")
 
 # COMMAND ----------
 # MAGIC %md ## 2. Run every check and store the findings

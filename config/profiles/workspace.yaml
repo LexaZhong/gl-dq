@@ -1,32 +1,12 @@
-# Run inside a Databricks notebook or job: uses the cluster's Spark session, no SQL warehouse needed.
-# Set DQ_TABLE (and the SOT tables) as env vars or notebook widgets; see notebooks/run_in_workspace.py.
+# Run inside a Databricks notebook or job: uses the cluster's Spark session, no SQL warehouse.
+# Everything else (table, measures, source-of-truth queries, check overrides, results table) is
+# inherited from the prod profile, so there is only one place to maintain them.
+extends: prod
+
 name: GL master (workspace)
 backend: spark
-table: ${DQ_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.gl_master}
-src_col: src
-sources: [BOP, BMQ, CMQ]
 
-derived_columns:
-  pol_yr: {expr: "year(pol_eff_dt)", type: int}
-  loss_yr: {expr: "year(evt_dt)", type: int}
-
-measures:
-  written_premium: tot_wrtn_prm_amt
-  loss: allocation
-  claim_count: claim_alloc
-  exposure: expo_amt
-  exposure_base: expn_bs
-
-policy_key: [pol_num, pol_eff_dt, pol_exp_dt]
-segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, loc_st_abbr, tx_type_nm, pol_stat]
-
-sql_vars:
-  sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_premium}
-  sot_loss_table: ${DQ_SOT_LOSS_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_loss}
-
-# config from the cloned repo; knowledge + results in Unity Catalog so they outlive the cluster
+# config comes from the cloned repo in the workspace; knowledge lives in a UC volume so it
+# outlives the cluster. Override either with env vars / notebook widgets.
 config_dir: ${DQ_CONFIG_DIR:-config}
 knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge}
-results:
-  type: delta
-  table: ${DQ_RESULTS_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.dq_check_results}
