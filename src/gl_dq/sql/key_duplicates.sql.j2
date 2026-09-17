@@ -1,0 +1,7 @@
+SELECT {% for k in keys %}{{ sel(k) }}, {% endfor %}COUNT(*) AS n_rows
+FROM {{ table }}
+{% if where %}WHERE {{ where }}{% endif %}
+GROUP BY {% for k in keys %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}
+HAVING COUNT(*) > 1
+ORDER BY n_rows DESC
+LIMIT {{ limit }}

@@ -1,0 +1,16 @@
+WITH g AS (
+  SELECT {% for k in keys %}{{ c(k) }} AS k{{ loop.index0 }}, {% endfor %}COUNT(*) AS cnt
+  FROM {{ table }}
+  {% if where %}WHERE {{ where }}{% endif %}
+  GROUP BY {% for k in keys %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}
+)
+SELECT
+  SUM(cnt) AS n_rows,
+  COUNT(*) AS n_distinct_keys,
+  SUM(CASE WHEN cnt > 1 THEN cnt ELSE 0 END) AS n_dup_rows,
+  SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS n_dup_groups,
+  MAX(cnt) AS max_rows_per_key
+  {% for k in keys %}
+  , SUM(CASE WHEN k{{ loop.index0 }} IS NULL THEN cnt ELSE 0 END) AS {{ q("null__" ~ k) }}
+  {% endfor %}
+FROM g

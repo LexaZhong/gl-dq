@@ -1,0 +1,8 @@
+{# c(col) -> whitelisted column/derived expression; sel(col) -> "expr AS col"; lit(v) -> literal; q(ident) -> quoted #}
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  SUM({{ numerator }}) AS numerator,
+  SUM({{ denominator }}) AS denominator,
+  COUNT(*) AS n_rows
+FROM {{ table }}
+{% if group_by %}GROUP BY {% for g in group_by %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

@@ -1,0 +1,6 @@
+SELECT
+  {% for g in dims %}{{ sel(g) }}, {% endfor %}
+  {% for alias, expr in measures.items() %}SUM({{ expr }}) AS {{ q(alias) }}{{ ", " if not loop.last }}{% endfor %}
+FROM {{ table }}
+{% if where %}WHERE {{ where }}{% endif %}
+{% if dims %}GROUP BY {% for g in dims %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

@@ -1,0 +1,32 @@
+# Local profile: synthetic data in DuckDB, config from ./config, knowledge + results under ./data.
+# Generate the data first:  python synthetic/generate.py --out data/
+name: GL master (synthetic)
+backend: duckdb
+duckdb_path: ${DQ_DUCKDB_PATH:-data/gl_synth.duckdb}
+table: gl_master_synth
+src_col: src
+sources: [BOP, BMQ, CMQ]
+
+derived_columns:
+  pol_yr: {expr: "year(pol_eff_dt)", type: int}
+  loss_yr: {expr: "year(evt_dt)", type: int}
+
+measures:
+  written_premium: tot_wrtn_prm_amt
+  loss: allocation
+  claim_count: claim_alloc
+  exposure: expo_amt
+  exposure_base: expn_bs
+
+policy_key: [pol_num, pol_eff_dt, pol_exp_dt]   # what identifies one policy term (used for policy counts)
+segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, loc_st_abbr, tx_type_nm, pol_stat]
+
+sql_vars:
+  sot_premium_table: sot_premium_synth
+  sot_loss_table: sot_loss_synth
+
+config_dir: config
+knowledge_dir: ${DQ_KNOWLEDGE_DIR:-data/knowledge}
+results:
+  type: parquet
+  path: ${DQ_RESULTS_DIR:-data/results}

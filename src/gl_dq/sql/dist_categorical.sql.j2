@@ -1,0 +1,19 @@
+WITH top_cats AS (
+  SELECT CAST({{ x }} AS STRING) AS cat
+  FROM {{ table }}
+  WHERE {{ x }} IS NOT NULL
+  GROUP BY 1
+  ORDER BY COUNT(*) DESC
+  LIMIT {{ max_categories }}
+)
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  CASE
+    WHEN {{ x }} IS NULL THEN '<null>'
+    WHEN tc.cat IS NULL THEN '<other>'
+    ELSE CAST({{ x }} AS STRING)
+  END AS category,
+  COUNT(*) AS n
+FROM {{ table }}
+LEFT JOIN top_cats tc ON CAST({{ x }} AS STRING) = tc.cat
+GROUP BY {% for g in group_by %}{{ loop.index }}, {% endfor %}{{ group_by | length + 1 }}

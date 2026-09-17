@@ -1,0 +1,79 @@
+from pathlib import Path
+
+import pytest
+import yaml
+
+from gl_dq.core.config import expand_env
+from gl_dq.core.db import DatabricksDialect, DuckDBDialect
+from gl_dq.core.schema import UnknownColumnError
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_unknown_column_rejected(ctx_injected):
+    with pytest.raises(UnknownColumnError):
+        ctx_injected.schema.ref("pol_num; DROP TABLE x")
+    with pytest.raises(UnknownColumnError):
+        ctx_injected.render_sql("agg_by_dims.sql.j2", dims=["nope"], measures={"n": "1"}, where=None)
+
+
+def test_derived_columns_expand(ctx_injected):
+    s = ctx_injected.schema
+    assert s.ref("pol_yr") == "(year(pol_eff_dt))"
+    assert s.ref("loss_yr") == "(year(evt_dt))"
+    sql = ctx_injected.render_sql("agg_by_dims.sql.j2", dims=["src", "pol_yr"], measures={"p": s.ref("tot_wrtn_prm_amt")}, where=None)
+    assert '(year(pol_eff_dt)) AS "pol_yr"' in sql
+    df = ctx_injected.db.query(sql)
+    assert set(df.columns) == {"src", "pol_yr", "p"} and df["pol_yr"].between(2018, 2024).all()
+
+
+def test_literal_escaping():
+    assert DuckDBDialect.lit("O'Brien") == "'O''Brien'"
+    assert DuckDBDialect.lit(0.5) == "0.5" and DuckDBDialect.lit(None) == "NULL"
+    assert DatabricksDialect().quote("a`b") == "`a``b`"
+
+
+def test_env_expansion(monkeypatch):
+    monkeypatch.setenv("X_SET", "yes")
+    monkeypatch.delenv("X_UNSET", raising=False)
+    assert expand_env("${X_SET:-no}/${X_UNSET:-dflt}/${X_UNSET}") == "yes/dflt/"
+    assert expand_env("${X_UNSET:-${X_SET}.gl_master}") == "yes.gl_master"
+
+
+def test_prod_profile_parses(monkeypatch):
+    from gl_dq.core.config import load_project
+
+    monkeypatch.setenv("DQ_CATALOG", "pricing_cat")
+    monkeypatch.setenv("DQ_SCHEMA", "gl")
+    monkeypatch.delenv("DQ_TABLE", raising=False)
+    p = load_project("prod")
+    assert p.table == "pricing_cat.gl.gl_master" and p.backend == "databricks"
+    assert p.config_dir == "/Volumes/pricing_cat/gl/gl_dq/config"
+    assert p.sql_vars["sot_premium_table"] == "pricing_cat.gl.sot_premium"
+    assert p.measures.claim_count == "claim_alloc"
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "config" / "checks").glob("*.yaml")), ids=lambda p: p.stem)
+def test_check_configs_validate(ctx_injected, path):
+    cls = ctx_injected.checks[path.stem]
+    cls.Config.model_validate(yaml.safe_load(path.read_text()))  # extra="forbid" catches typos
+
+
+def test_config_roundtrip(ctx_injected, tmp_path):
+    from gl_dq.core.storage import LocalStorage
+
+    store = ctx_injected.config_store
+    ctx_injected.config_store = LocalStorage(tmp_path)
+    try:
+        cfg = ctx_injected.checks["distribution"].Config.model_validate(
+            yaml.safe_load((ROOT / "config/checks/distribution.yaml").read_text()))
+        cfg.variables[0].percentile_bins = [0.1, 0.9]
+        ctx_injected.save_check_config("distribution", cfg)
+        assert ctx_injected.check_config("distribution") == cfg
+    finally:
+        ctx_injected.config_store = store
+
+
+def test_page_order(ctx_injected):
+    assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "distribution",
+                                             "premium_recon", "loss_recon", "exposure"]

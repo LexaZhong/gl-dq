@@ -1,0 +1,99 @@
+# Databricks Asset Bundle: UC volume (config + knowledge), refresh job, Streamlit app.
+#   databricks bundle validate -t dev --var warehouse_id=<id>
+#   databricks bundle deploy   -t dev --var warehouse_id=<id>
+#   python jobs/seed_volume.py --catalog <cat> --schema <schema>      # first time only
+#   databricks bundle run gl_dq_app -t dev
+bundle:
+  name: gl-dq
+
+variables:
+  catalog:
+    description: Unity Catalog catalog holding gl_master
+    default: main
+  schema:
+    description: Schema holding gl_master (the volume and results table are created here)
+    default: pricing
+  warehouse_id:
+    description: SQL warehouse used by the app and the refresh job
+
+sync:
+  exclude:
+    - data/**
+    - .venv/**
+    - tests/**
+    - "**/__pycache__/**"
+    - .pytest_cache/**
+
+resources:
+  volumes:
+    gl_dq:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      name: gl_dq
+      comment: gl_dq check configs, SOT queries and the variable knowledge base (YAML)
+
+  jobs:
+    gl_dq_refresh:
+      name: gl-dq-refresh
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: America/New_York
+        pause_status: PAUSED          # unpause once the SOT queries are filled in
+      tasks:
+        - task_key: refresh
+          spark_python_task:
+            python_file: jobs/refresh.py
+            parameters: [--profile, prod, --catalog, "${var.catalog}", --schema, "${var.schema}",
+                         --warehouse-id, "${var.warehouse_id}"]
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - pydantic>=2.5
+              - jinja2>=3.1
+              - pyyaml>=6.0
+              - plotly>=5.18
+              - databricks-sql-connector>=3.0
+              - databricks-sdk>=0.30
+
+  apps:
+    gl_dq_app:
+      name: gl-dq-tracker
+      description: GL master data cleaning tracker (status, notes, reconciliations)
+      source_code_path: .
+      config:
+        command: ["streamlit", "run", "app/app.py"]
+        env:
+          - name: DQ_PROFILE
+            value: prod
+          - name: DQ_CATALOG
+            value: ${var.catalog}
+          - name: DQ_SCHEMA
+            value: ${var.schema}
+          - name: DATABRICKS_WAREHOUSE_ID
+            valueFrom: sql-warehouse
+          - name: DQ_REFRESH_JOB_ID
+            valueFrom: refresh-job
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: refresh-job
+          job:
+            id: ${resources.jobs.gl_dq_refresh.id}
+            permission: CAN_MANAGE_RUN
+        - name: gl-dq-volume        # requires a recent Databricks CLI; otherwise use the GRANTs in README
+          uc_securable:
+            securable_full_name: ${var.catalog}.${var.schema}.gl_dq
+            securable_type: VOLUME
+            permission: WRITE_VOLUME
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production

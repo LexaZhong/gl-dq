@@ -1,0 +1,39 @@
+enabled: true
+order: 30
+variables:
+  - name: tot_wrtn_prm_amt
+    type: numeric
+    group_by: [src, pol_yr]
+    percentile_bins: 20
+    log_scale: {method: signed_log, y: false}
+    hist_bins: 60
+    allow_negative: true        # cancellations / return premium
+    outlier_ratio: 50           # flag when max > 50 x p99
+    psi: {across: pol_yr, bins: 10, warn: 0.10, fail: 0.25}
+  - name: expo_amt
+    type: numeric
+    group_by: [src]
+    percentile_bins: 20
+    log_scale: {method: log1p, y: false}
+    allow_negative: false
+    outlier_ratio: 50
+  - name: allocation
+    type: numeric
+    group_by: [src]
+    percentile_bins: [0.5, 0.75, 0.9, 0.95, 0.99, 0.995, 0.999]
+    log_scale: {method: log1p, y: true}
+    allow_negative: false
+  - name: class1_cd
+    type: categorical
+    group_by: [pol_yr]
+    top_n: 25
+    psi: {across: pol_yr, warn: 0.10, fail: 0.25}
+  - name: covg_type_desc
+    type: categorical
+    group_by: [src]
+    top_n: 10
+  - name: loc_st_abbr
+    type: categorical
+    group_by: [src, pol_yr]
+    top_n: 15
+    psi: {across: pol_yr, warn: 0.10, fail: 0.25}

@@ -1,0 +1,7 @@
+enabled: true
+order: 40
+dims: [src, covg_type_desc]
+sot_query: sql/sot_premium.sql
+sot_measure: wrtn_prm
+dim_map: {}
+tolerance: {abs: 1000, pct: 0.005}

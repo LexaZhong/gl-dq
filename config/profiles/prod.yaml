@@ -1,0 +1,34 @@
+# Databricks profile: gl_master on a SQL warehouse, config + knowledge in a UC Volume, results in Delta.
+# Env vars are set by the Databricks App (databricks.yml -> apps.config.env) and by the refresh job.
+# To dry-run against the synthetic tables on Databricks: DQ_TABLE=<cat>.<schema>.gl_master_synth
+name: GL master
+backend: databricks
+warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
+table: ${DQ_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.gl_master}
+src_col: src
+sources: [BOP, BMQ, CMQ]
+
+derived_columns:
+  pol_yr: {expr: "year(pol_eff_dt)", type: int}
+  loss_yr: {expr: "year(evt_dt)", type: int}
+
+measures:
+  written_premium: tot_wrtn_prm_amt
+  loss: allocation
+  claim_count: claim_alloc
+  exposure: expo_amt
+  exposure_base: expn_bs
+
+policy_key: [pol_num, pol_eff_dt, pol_exp_dt]   # what identifies one policy term (used for policy counts)
+segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, loc_st_abbr, tx_type_nm, pol_stat]
+
+sql_vars:                          # referenced by the SOT queries in <config_dir>/sql/*.sql
+  sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_premium}
+  sot_loss_table: ${DQ_SOT_LOSS_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_loss}
+
+config_dir: /Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/config
+knowledge_dir: /Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge
+results:
+  type: delta
+  table: ${DQ_CATALOG}.${DQ_SCHEMA}.dq_check_results
+refresh_job_id: ${DQ_REFRESH_JOB_ID}

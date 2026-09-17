@@ -1,0 +1,7 @@
+SELECT
+  COUNT(*) AS n_valid,
+  {{ dialect.percentiles(v, probs) }} AS limits,
+  MIN({{ v }}) AS vmin,
+  MAX({{ v }}) AS vmax
+FROM {{ table }}
+WHERE {{ where }}

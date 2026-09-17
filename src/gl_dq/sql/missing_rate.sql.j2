@@ -1,0 +1,9 @@
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  COUNT(*) AS n_rows
+  {% for v in variables %}
+  , SUM(CASE WHEN {{ v.applies }} THEN 1 ELSE 0 END) AS a__{{ loop.index0 }}
+  , SUM(CASE WHEN ({{ v.applies }}) AND ({{ v.missing }}) THEN 1 ELSE 0 END) AS m__{{ loop.index0 }}
+  {% endfor %}
+FROM {{ table }}
+{% if group_by %}GROUP BY {% for g in group_by %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

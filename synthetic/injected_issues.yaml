@@ -1,0 +1,79 @@
+# Ground truth of deliberate data problems injected by synthetic/generate.py.
+# tests/test_injected_issues.py asserts that every `expect` block is flagged (warn/fail)
+# by the dashboard checks, and that a clean run (--no-inject) flags nothing.
+#
+# expect keys: check (required), variable, item, metric, segment (all listed pairs must
+# appear in the finding's segment string, e.g. {src: BMQ} matches "src=BMQ|pol_yr=2019").
+
+issues:
+  - id: key_bmq_dups
+    description: 0.5% of BMQ rows duplicated exactly.
+    expect: {check: key_uniqueness, variable: _key, segment: {src: BMQ}, metric: dup_rate}
+
+  - id: key_cmq_blank_class
+    description: Some multi-class CMQ policies have class1_cd blanked, so their key collides.
+    expect: {check: key_uniqueness, variable: _key, segment: {src: CMQ}, metric: dup_rate}
+
+  - id: miss_cmq_class_null
+    description: CMQ class1_cd is null on 12% of rows.
+    expect: {check: missing_rate, variable: class1_cd, segment: {src: CMQ}}
+
+  - id: miss_bop_zip_blank
+    description: BOP loc_zipcd is an empty string on 3% of rows.
+    expect: {check: missing_rate, variable: loc_zipcd, segment: {src: BOP}}
+
+  - id: miss_bmq_expn_unk
+    description: BMQ expn_bs holds the sentinel 'UNK' on 2% of rows.
+    expect: {check: missing_rate, variable: expn_bs, segment: {src: BMQ}}
+
+  - id: miss_evt_dt_with_claims
+    description: evt_dt is null on 1% of rows that have claims.
+    expect: {check: missing_rate, variable: evt_dt}
+
+  - id: dist_bmq_2019_cents
+    description: BMQ policy-year 2019 premium recorded in cents (x100).
+    expect: {check: distribution, variable: tot_wrtn_prm_amt, metric: psi, segment: {src: BMQ, pol_yr: "2019"}}
+
+  - id: dist_negative_expo
+    description: 20 rows with negative expo_amt.
+    expect: {check: distribution, variable: expo_amt, metric: pct_negative}
+
+  - id: dist_premium_outliers
+    description: 10 rows with premium multiplied by 1000.
+    expect: {check: distribution, variable: tot_wrtn_prm_amt, metric: max_to_p99}
+
+  - id: dist_new_class_2023
+    description: New class code 99999 appears only in policy year 2023 (2% of rows).
+    expect: {check: distribution, variable: class1_cd, metric: new_categories, segment: {pol_yr: "2023"}}
+
+  - id: prem_sot_cmq_liquor
+    description: Source of truth CMQ Liquor Liability premium is 3% higher than pipeline.
+    expect: {check: premium_recon, segment: {src: CMQ, covg_type_desc: Liquor Liability}}
+
+  - id: prem_bop_2020_medpay_missing
+    description: BOP policy-year 2020 Medical Payments rows are missing from the pipeline.
+    expect: {check: premium_recon, segment: {src: BOP, covg_type_desc: Medical Payments}}
+
+  - id: loss_bop_2021_short
+    description: BOP loss-year 2021 allocation is 5% short vs source of truth.
+    expect: {check: loss_recon, item: loss, segment: {src: BOP, loss_yr: "2021"}}
+
+  - id: loss_bmq_2022_claims_double
+    description: BMQ loss-year 2022 claim counts are double counted.
+    expect: {check: loss_recon, item: claim_count, segment: {src: BMQ, loss_yr: "2022"}}
+
+  - id: expo_class_mixed_base
+    description: The most common class code has 30% of rows on a different exposure base.
+    expect: {check: exposure, variable: expn_bs, metric: n_classes_multi_base}
+
+  - id: expo_zero_positive_prem
+    description: 50 rows with zero expo_amt but positive premium.
+    expect: {check: exposure, variable: expo_amt, metric: pct_zero_expo_pos_prem}
+
+  - id: date_exp_before_eff
+    description: 15 policies with pol_exp_dt before pol_eff_dt.
+    expect: {check: business_rules, item: exp_after_eff}
+
+  - id: date_evt_outside_period
+    description: 25 claim rows with evt_dt before the policy effective date.
+    expect: {check: business_rules, item: evt_in_policy_period}

@@ -1,0 +1,11 @@
+SELECT
+  {{ sel(class_col) }},
+  COUNT(DISTINCT {{ base }}) AS n_bases,
+  {{ dialect.distinct_list(base) }} AS bases,
+  COUNT(*) AS n_rows
+FROM {{ table }}
+WHERE {{ class }} IS NOT NULL AND TRIM(CAST({{ class }} AS STRING)) <> '' AND {{ base }} IS NOT NULL
+  {% if exclude %}AND TRIM({{ base }}) NOT IN ({% for e in exclude %}{{ lit(e) }}{{ ", " if not loop.last }}{% endfor %}){% endif %}
+GROUP BY 1
+HAVING COUNT(DISTINCT {{ base }}) > 1
+ORDER BY n_rows DESC

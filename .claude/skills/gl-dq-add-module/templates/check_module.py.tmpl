@@ -1,0 +1,71 @@
+"""<One line: what question this module answers.>"""
+from __future__ import annotations
+
+import pandas as pd
+
+from gl_dq.checks.base import Check, CheckResult
+from gl_dq.core.config import CheckConfig
+from gl_dq.core.registry import register_check
+from gl_dq.core.results import grade, segment_key
+
+
+@register_check("<name>")
+class <ClassName>(Check):
+    title = "<Page title>"
+    icon = "<emoji>"
+    description = "<Two sentences for the page header: what it shows and when a segment is flagged.>"
+    default_order = <int>
+
+    class Config(CheckConfig):
+        group_by: list[str] = ["src"]
+        warn: float | None = None
+        fail: float | None = None
+
+    def compute(self, group_by: list[str]) -> pd.DataFrame:
+        m, s = self.project.measures, self.schema
+        s.validate(group_by)
+        df = self.query("main", self.ctx.render_sql(
+            "<name>.sql.j2", group_by=group_by,
+            numerator=s.ref(m.<measure_a>), denominator=s.ref(m.<measure_b>)))
+        df["ratio"] = df["numerator"] / df["denominator"].where(df["denominator"] != 0)
+        df["segment"] = [segment_key({g: r[g] for g in group_by}) for _, r in df.iterrows()]
+        return df
+
+    def run(self) -> CheckResult:
+        df = self.compute(self.cfg.group_by)
+        df["status"] = [grade(v, self.cfg.warn, self.cfg.fail) if self.cfg.warn is not None or self.cfg.fail is not None
+                        else "info" for v in df["ratio"]]
+        findings = [dict(variable=self.project.measures.<measure_a>, item="<item>", segment=r["segment"],
+                         metric="<metric>", value=r["ratio"], threshold=self.cfg.fail, status=r["status"],
+                         detail=f"{r['numerator']:,.0f} / {r['denominator']:,.0f}")
+                    for _, r in df.iterrows()]
+        return self.result(findings, {"main": df})
+
+    def settings_ui(self, cfg):
+        import streamlit as st
+
+        new = cfg.model_copy(deep=True)
+        opts = self.segment_options()
+        new.group_by = st.multiselect("Levels", opts, default=[g for g in cfg.group_by if g in opts], key="<name>_lvl")
+        c1, c2 = st.columns(2)
+        new.warn = c1.number_input("Warn if >", value=cfg.warn, key="<name>_warn")
+        new.fail = c2.number_input("Fail if >", value=cfg.fail, key="<name>_fail")
+        return new
+
+    def render(self, result):
+        import plotly.express as px
+        import streamlit as st
+
+        from gl_dq.ui.components import status_table
+        from gl_dq.ui.theme import series_encoding, style
+
+        df = result.tables["main"]
+        gb = self.cfg.group_by
+        if gb:
+            x = gb[-1]
+            enc = series_encoding(df, gb[0], self.project.sources, gb) if len(gb) > 1 else {}
+            fig = px.bar(df, x=x, y="ratio", barmode="group", hover_data={"segment": True}, **enc)
+            st.plotly_chart(style(fig, 360, "<chart title>"), use_container_width=True)
+        # facets (e.g. one panel per exposure base): facet_col_wrap=3, facet_col_spacing=0.07,
+        # facet_row_spacing=0.18, fig.update_yaxes(matches=None, showticklabels=True), height 260 per row
+        status_table(df, number_formats={"ratio": "%.4f"})

@@ -1,0 +1,9 @@
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  COUNT(*) AS n_rows
+  {% for r in rules %}
+  , SUM(CASE WHEN {{ r.applies_when or "1=1" }} THEN 1 ELSE 0 END) AS a__{{ loop.index0 }}
+  , SUM(CASE WHEN ({{ r.applies_when or "1=1" }}) AND ({{ r.violation }}) THEN 1 ELSE 0 END) AS v__{{ loop.index0 }}
+  {% endfor %}
+FROM {{ table }}
+{% if group_by %}GROUP BY {% for g in group_by %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

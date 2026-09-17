@@ -1,0 +1,174 @@
+# Review workflow for every column + catalog of recommended preprocessing steps.
+# Stages are shown in this order. `role` = who holds the column in that stage; `done` stages count as reviewed.
+# `in_flow: false` = an outcome outside the main hand-off path. Set require_actuary_signoff: true to add the
+# optional actuary sign-off stage between DS validation and Resolved.
+roles:
+  ds: Data scientist
+  actuary: Actuary
+  de: Data engineer
+require_actuary_signoff: false
+stages:
+- key: not_started
+  label: Not started
+  icon: ⚪
+  description: Nobody has looked at this column yet
+- key: investigating
+  label: DS investigating
+  icon: 🔎
+  role: ds
+  description: A data scientist identified a problem and is investigating
+- key: actuary_review
+  label: Confirming with actuary
+  icon: 🧮
+  role: actuary
+  description: Findings and the proposed fix are being confirmed with an actuary
+- key: with_de
+  label: With DE for fix
+  icon: 🛠️
+  role: de
+  description: Settled; a data engineer is transforming / fixing the column
+- key: ds_validation
+  label: DS validating fix
+  icon: 🧪
+  role: ds
+  description: The fix is in the pipeline; a data scientist validates it
+- key: actuary_signoff
+  label: Actuary sign-off
+  icon: ✍️
+  role: actuary
+  optional: true
+  description: Optional final sign-off by an actuary
+- key: resolved
+  label: Resolved
+  icon: ✅
+  done: true
+  description: Fixed and validated
+- key: no_issue
+  label: No issue / accepted as is
+  icon: ☑️
+  done: true
+  in_flow: false
+  description: Checked; no fix needed
+- key: preprocess_in_modeling
+  label: Preprocess in modeling
+  icon: ⚙️
+  done: true
+  in_flow: false
+  requires_preprocessing: true
+  description: Left as is in the data; handled by recommended preprocessing in the modeling pipeline
+- key: wont_fix
+  label: Won't fix
+  icon: ⛔
+  done: true
+  in_flow: false
+  description: Known issue that will not be fixed (document why)
+preprocessing_ops:
+  impute:
+    label: Impute missing
+    description: Fill missing / sentinel values
+    params:
+      strategy:
+        type: select
+        options:
+        - median
+        - mean
+        - mode
+        - constant
+        - zero
+        default: median
+      value:
+        type: text
+        help: Only for strategy=constant
+      add_indicator:
+        type: bool
+        default: true
+        help: Add a <column>_missing flag
+      group_by:
+        type: list
+        help: Impute within groups, e.g. src, class1_cd
+  map_values:
+    label: Map / recode values
+    description: Recode sentinel or legacy values
+    params:
+      mapping:
+        type: mapping
+        help: from=to pairs, e.g. UNK=null, 000000=null
+  cap:
+    label: Cap / winsorize
+    description: Limit extreme values
+    params:
+      lower_pct:
+        type: number
+        default: 0.0
+        help: Lower percentile (0-1)
+      upper_pct:
+        type: number
+        default: 0.99
+        help: Upper percentile (0-1)
+      by:
+        type: list
+        help: Compute percentiles within groups, e.g. src
+  scale_fix:
+    label: Unit / scale correction
+    description: Fix a unit problem, e.g. cents to dollars
+    params:
+      multiply_by:
+        type: number
+        default: 0.01
+      condition:
+        type: text
+        help: Rows to fix, e.g. src = 'BMQ' AND pol_yr = 2019
+  log_transform:
+    label: Log transform
+    params:
+      method:
+        type: select
+        options:
+        - log1p
+        - log10
+        - signed_log
+        default: log1p
+  group_rare:
+    label: Group rare levels
+    params:
+      min_share:
+        type: number
+        default: 0.005
+      other_label:
+        type: text
+        default: OTHER
+  bin:
+    label: Bin
+    params:
+      method:
+        type: select
+        options:
+        - quantile
+        - fixed_edges
+        default: quantile
+      n_bins:
+        type: number
+        default: 10
+      edges:
+        type: list
+        help: For fixed_edges, e.g. 0, 250, 500, 1000
+  exclude_rows:
+    label: Exclude rows
+    description: Drop rows from the modeling data
+    params:
+      condition:
+        type: text
+        help: e.g. expo_amt <= 0
+  derive:
+    label: Derive feature
+    params:
+      new_column:
+        type: text
+      expression:
+        type: text
+        help: e.g. tot_wrtn_prm_amt / NULLIF(expo_amt, 0)
+  custom:
+    label: Custom
+    params:
+      instructions:
+        type: text

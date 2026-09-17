@@ -1,0 +1,13 @@
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  COUNT(*) AS n_rows,
+  COUNT({{ x }}) AS n_nonnull,
+  SUM(CASE WHEN {{ x }} = 0 THEN 1 ELSE 0 END) AS n_zero,
+  SUM(CASE WHEN {{ x }} < 0 THEN 1 ELSE 0 END) AS n_negative,
+  MIN({{ x }}) AS min,
+  AVG({{ x }}) AS mean,
+  MAX({{ x }}) AS max,
+  STDDEV_SAMP({{ x }}) AS std,
+  {{ dialect.percentiles(x, probs) }} AS pcts
+FROM {{ table }}
+{% if group_by %}GROUP BY {% for g in group_by %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

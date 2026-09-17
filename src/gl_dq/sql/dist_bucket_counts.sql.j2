@@ -1,0 +1,8 @@
+{# counts per segment x bucket; bucket_expr is built from numeric literals #}
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  {{ bucket_expr }} AS bucket,
+  COUNT(*) AS n
+FROM {{ table }}
+WHERE {{ where }}
+GROUP BY {% for g in group_by %}{{ loop.index }}, {% endfor %}{{ group_by | length + 1 }}

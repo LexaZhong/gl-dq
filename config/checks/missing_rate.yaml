@@ -1,0 +1,22 @@
+enabled: true
+order: 20
+default:
+  warn: 0.05
+  fail: 0.20
+  group_by: [src]
+blank_strings_are_missing: true
+exclude: []
+variables:
+  tot_wrtn_prm_amt: {warn: 0.0, fail: 0.001}
+  pol_num: {warn: 0.0, fail: 0.0}
+  pol_eff_dt: {warn: 0.0, fail: 0.0}
+  class1_cd: {warn: 0.01, fail: 0.05}
+  loc_zipcd: {warn: 0.01, fail: 0.05}
+  expn_bs: {warn: 0.0, fail: 0.01, treat_as_missing: [UNK]}
+  # structural nulls: only measure where the field should be populated
+  rsk_loc_id: {applies_when: "src <> 'CMQ'"}
+  rsk_itm_id: {applies_when: "src = 'BMQ'"}
+  evt_dt: {warn: 0.0, fail: 0.005, applies_when: "claim_alloc > 0"}
+  bi_ded_amt: {applies_when: "csl_ded_amt IS NULL"}
+  pd_ded_amt: {applies_when: "csl_ded_amt IS NULL"}
+  csl_ded_amt: {applies_when: "bi_ded_amt IS NULL AND pd_ded_amt IS NULL"}

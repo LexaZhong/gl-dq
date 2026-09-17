@@ -1,0 +1,17 @@
+def test_<name>_runs_and_grades(ctx_injected):
+    res = ctx_injected.make_check("<name>").run()
+    assert not res.findings.empty
+    assert set(res.findings["status"]) <= {"pass", "info", "warn", "fail"}
+    assert res.findings["segment"].str.startswith("src=").all()  # default level
+
+
+def test_<name>_levels_are_configurable(ctx_injected):
+    chk = ctx_injected.checks["<name>"]
+    cfg = chk.Config(group_by=["src", "pol_yr"])
+    res = ctx_injected.make_check("<name>", cfg).run()
+    assert res.findings["segment"].str.contains(r"\|pol_yr=").all()
+
+
+def test_<name>_clean_data(ctx_clean):
+    res = ctx_clean.make_check("<name>").run()
+    assert not res.findings["status"].isin(["fail"]).any()

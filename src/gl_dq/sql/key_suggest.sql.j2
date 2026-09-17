@@ -1,0 +1,6 @@
+SELECT COUNT(*) AS n_rows
+{% for name, cols in candidates.items() %}
+  , COUNT(DISTINCT {{ dialect.row(cols) }}) AS {{ q(name) }}
+{% endfor %}
+FROM {{ table }}
+{% if where %}WHERE {{ where }}{% endif %}

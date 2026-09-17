@@ -1,0 +1,16 @@
+# Databricks Apps runtime config (used when deploying without the bundle).
+# With the bundle, databricks.yml -> resources.apps.gl_dq_app.config takes precedence.
+command: ["streamlit", "run", "app/app.py"]
+env:
+  - name: DQ_PROFILE
+    value: prod
+  - name: DQ_CATALOG
+    value: main            # TODO
+  - name: DQ_SCHEMA
+    value: pricing         # TODO
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: DQ_REFRESH_JOB_ID
+    valueFrom: refresh-job
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"

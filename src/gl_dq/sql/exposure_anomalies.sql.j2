@@ -1,0 +1,9 @@
+SELECT
+  {% for g in group_by %}{{ sel(g) }}, {% endfor %}
+  COUNT(*) AS n_rows,
+  SUM(CASE WHEN {{ expo }} IS NULL THEN 1 ELSE 0 END) AS n_null_expo,
+  SUM(CASE WHEN {{ expo }} < 0 THEN 1 ELSE 0 END) AS n_negative_expo,
+  SUM(CASE WHEN {{ expo }} = 0 AND {{ prem }} > 0 THEN 1 ELSE 0 END) AS n_zero_expo_pos_prem,
+  SUM(CASE WHEN {{ expo }} > 0 AND COALESCE({{ prem }}, 0) = 0 THEN 1 ELSE 0 END) AS n_pos_expo_zero_prem
+FROM {{ table }}
+{% if group_by %}GROUP BY {% for g in group_by %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

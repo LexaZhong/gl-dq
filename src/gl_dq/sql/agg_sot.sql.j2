@@ -1,0 +1,7 @@
+SELECT
+  {% for alias, col in dims.items() %}sot.{{ q(col) }} AS {{ q(alias) }}, {% endfor %}
+  {% for alias, col in measures.items() %}SUM(sot.{{ q(col) }}) AS {{ q(alias) }}{{ ", " if not loop.last }}{% endfor %}
+FROM (
+{{ sot_sql }}
+) sot
+{% if dims %}GROUP BY {% for g in dims %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}
