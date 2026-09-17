@@ -34,7 +34,7 @@ class ProjectConfig(BaseModel):
     """A profile: which table, which backend, where config/knowledge/results live."""
 
     name: str = "GL master"
-    backend: Literal["duckdb", "databricks"] = "duckdb"
+    backend: Literal["duckdb", "databricks", "spark"] = "duckdb"  # spark = inside a Databricks notebook/job
     duckdb_path: str | None = None
     warehouse_id: str | None = None
     table: str

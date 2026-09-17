@@ -140,6 +140,38 @@ class DatabricksDatabase(Database):
         return out
 
 
+class SparkDatabase(Database):
+    """The Spark session of a Databricks notebook or job cluster (no SQL warehouse needed)."""
+
+    dialect = DatabricksDialect()
+
+    def __init__(self, spark=None):
+        if spark is None:
+            try:
+                from databricks.sdk.runtime import spark as runtime_spark
+
+                spark = runtime_spark
+            except ImportError:
+                from pyspark.sql import SparkSession
+
+                spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
+        if spark is None:
+            raise RuntimeError("no active Spark session: run this inside a Databricks notebook or job")
+        self.spark = spark
+
+    def query(self, sql):
+        return self.spark.sql(sql).toPandas()
+
+    def describe(self, table):
+        out = {}
+        for r in self.query(f"DESCRIBE TABLE {table}").itertuples():
+            name = r.col_name
+            if not name or name.startswith("#"):
+                break  # partition / metadata section
+            out[name] = r.data_type.lower()
+        return out
+
+
 def make_database(project) -> Database:
     if project.backend == "duckdb":
         from gl_dq import REPO_ROOT
@@ -148,6 +180,8 @@ def make_database(project) -> Database:
         if not os.path.isabs(path):
             path = str(REPO_ROOT / path)
         return DuckDBDatabase(path)
+    if project.backend == "spark":
+        return SparkDatabase()
     if project.backend == "databricks":
         wid = expand_env(project.warehouse_id or "")
         if not wid or wid.startswith("$"):

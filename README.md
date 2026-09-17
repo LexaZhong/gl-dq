@@ -61,6 +61,7 @@ src/gl_dq/tracker.py             review progress + "re-opened by data" logic
 src/gl_dq/ui/                    Streamlit frame, notes panel, chart theme
 jobs/refresh.py                  runs all checks and appends findings (parquet locally, Delta on Databricks)
 jobs/check_setup.py              preflight: does the profile match the real table?
+notebooks/run_in_workspace.py    run the checks from a Databricks notebook (Spark backend)
 jobs/seed_volume.py              copies configs + SOT SQL into the UC volume
 .claude/skills/                  Claude Code skills (below)
 ```
@@ -84,6 +85,31 @@ the second person gets a warning instead of silently overwriting the first perso
 
 They load automatically when Claude Code is opened in this repo. To share them more widely, copy them to
 `~/.claude/skills/` or package them as a plugin.
+
+## Run it inside your Databricks workspace
+
+Three ways, from least to most permission needed.
+
+**A. Notebook (no warehouse, no app, nothing to deploy)** — runs the checks on the cluster's Spark session:
+1. Workspace → Create → **Git folder**, URL `https://github.com/LexaZhong/gl-dq`.
+2. Open `notebooks/run_in_workspace.py`, attach a cluster (DBR 14+), fill in the catalog/schema widgets, Run All.
+It runs preflight, then every check, writes findings to `<catalog>.<schema>.dq_check_results` and displays the
+flagged rows and the portfolio summary. Statuses and notes go to a UC volume (`gl_dq`) so they outlive the cluster;
+the notebook can create it for you. What you do **not** get here is the dashboard UI: Streamlit cannot render in a
+notebook.
+
+**B. Databricks App (the dashboard, shared with the team)** — needs permission to create Apps and a SQL warehouse;
+see *Deploy to Databricks* below. The bundle is the easy path, but you can also create the app in the UI
+(Compute → Apps → Create app → deploy from a workspace folder) pointing at the Git folder from A, since `app.yaml`
+sits at the repo root.
+
+**C. From your laptop against the workspace** — the full dashboard, no deployment, only `SELECT` rights:
+```bash
+export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net DATABRICKS_TOKEN=<pat>
+export DATABRICKS_WAREHOUSE_ID=<id> DQ_CATALOG=<cat> DQ_SCHEMA=<schema>
+python jobs/check_setup.py --profile prod
+DQ_PROFILE=prod DQ_CONFIG_DIR=config DQ_KNOWLEDGE_DIR=data/knowledge_prod streamlit run app/app.py
+```
 
 ## Deploy to Databricks
 

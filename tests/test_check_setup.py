@@ -46,3 +46,33 @@ def test_reports_a_broken_source_of_truth_query(ctx_injected, tmp_path, capsys):
     with pytest.raises(SystemExit):
         check_setup.main(["--profile", prof])
     assert "premium_recon source of truth failed" in capsys.readouterr().out
+
+
+def test_spark_backend_uses_the_session(monkeypatch):
+    """SparkDatabase must send SQL to spark.sql and parse DESCRIBE TABLE output."""
+    import pandas as pd
+
+    from gl_dq.core.db import SparkDatabase
+
+    class FakeDF:
+        def __init__(self, df):
+            self._df = df
+
+        def toPandas(self):  # noqa: N802 (pyspark API)
+            return self._df
+
+    seen = []
+
+    class FakeSpark:
+        def sql(self, q):
+            seen.append(q)
+            if q.startswith("DESCRIBE TABLE"):
+                return FakeDF(pd.DataFrame({"col_name": ["src", "expo_amt", "", "# Partitioning", "Not partitioned"],
+                                            "data_type": ["STRING", "DOUBLE", "", "", ""]}))
+            return FakeDF(pd.DataFrame({"n": [1]}))
+
+    db = SparkDatabase(FakeSpark())
+    assert db.dialect.name == "databricks"
+    assert db.describe("cat.sch.gl_master") == {"src": "string", "expo_amt": "double"}
+    assert db.query("SELECT 1 AS n")["n"].tolist() == [1]
+    assert seen == ["DESCRIBE TABLE cat.sch.gl_master", "SELECT 1 AS n"]
