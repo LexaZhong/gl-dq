@@ -9,10 +9,10 @@ bundle:
 variables:
   catalog:
     description: Unity Catalog catalog holding gl_master
-    default: main
+    default: na_act
   schema:
     description: Schema holding gl_master (the volume and results table are created here)
-    default: pricing
+    default: consd_sb
   warehouse_id:
     description: SQL warehouse used by the app and the refresh job
 

@@ -6,7 +6,6 @@ extends: prod
 name: GL master (workspace)
 backend: spark
 
-# config comes from the cloned repo in the workspace; knowledge lives in a UC volume so it
-# outlives the cluster. Override either with env vars / notebook widgets.
+# config comes from the cloned repo in the workspace; the knowledge volume path is inherited from
+# prod (override it with DQ_KNOWLEDGE_DIR or the notebook widget).
 config_dir: ${DQ_CONFIG_DIR:-config}
-knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge}

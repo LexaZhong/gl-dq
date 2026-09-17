@@ -2,9 +2,10 @@
 # Env vars are set by the Databricks App (databricks.yml -> apps.config.env) and by the refresh job.
 # To dry-run against the synthetic tables on Databricks: DQ_TABLE=<cat>.<schema>.gl_master_synth
 name: GL master
+# defaults below are na_act.consd_sb; override per environment with DQ_CATALOG / DQ_SCHEMA
 backend: databricks
 warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
-table: ${DQ_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.gl_master}
+table: ${DQ_TABLE:-${DQ_CATALOG:-na_act}.${DQ_SCHEMA:-consd_sb}.gl_master}
 src_col: src
 sources: [BOP, BMQ, CMQ]
 
@@ -29,11 +30,11 @@ sql_vars:                          # referenced by the SOT queries in <config_di
   study_to: ${DQ_STUDY_TO:-2025-12-31}
 
 # config + knowledge live in the UC Volume; override with DQ_CONFIG_DIR=config to dry-run from a laptop
-config_dir: ${DQ_CONFIG_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/config}
-knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge}
+config_dir: ${DQ_CONFIG_DIR:-/Volumes/${DQ_CATALOG:-na_act}/${DQ_SCHEMA:-consd_sb}/gl_dq/config}
+knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG:-na_act}/${DQ_SCHEMA:-consd_sb}/gl_dq/knowledge}
 results:
   type: delta
-  table: ${DQ_RESULTS_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.dq_check_results}
+  table: ${DQ_RESULTS_TABLE:-${DQ_CATALOG:-na_act}.${DQ_SCHEMA:-consd_sb}.dq_check_results}
 refresh_job_id: ${DQ_REFRESH_JOB_ID}
 
 # The pricing study covers BMQ and CMQ only, has no coverage split, and is limited to policies

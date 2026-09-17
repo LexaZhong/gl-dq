@@ -5,9 +5,9 @@ env:
   - name: DQ_PROFILE
     value: prod
   - name: DQ_CATALOG
-    value: main            # TODO
+    value: na_act
   - name: DQ_SCHEMA
-    value: pricing         # TODO
+    value: consd_sb
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
   - name: DQ_REFRESH_JOB_ID

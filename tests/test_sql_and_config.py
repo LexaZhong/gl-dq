@@ -100,6 +100,20 @@ def test_workspace_profile_inherits_prod(monkeypatch):
     assert w.knowledge_dir == "/Volumes/cat/sch/gl_dq/knowledge"      # survives the cluster
 
 
+def test_profiles_default_to_the_real_catalog_and_schema(monkeypatch):
+    """With no env set, both Databricks profiles must resolve to na_act.consd_sb (no empty path parts)."""
+    from gl_dq.core.config import load_project
+
+    for var in ("DQ_CATALOG", "DQ_SCHEMA", "DQ_TABLE", "DQ_CONFIG_DIR", "DQ_KNOWLEDGE_DIR", "DQ_RESULTS_TABLE"):
+        monkeypatch.delenv(var, raising=False)
+    for name in ("prod", "workspace"):
+        p = load_project(name)
+        assert p.table == "na_act.consd_sb.gl_master"
+        assert p.results.table == "na_act.consd_sb.dq_check_results"
+        assert p.knowledge_dir == "/Volumes/na_act/consd_sb/gl_dq/knowledge"
+        assert "//" not in p.knowledge_dir.replace("/Volumes", "") and "//" not in p.config_dir
+
+
 def test_circular_profile_inheritance_is_rejected(tmp_path, monkeypatch):
     import pytest as _pytest
     import yaml as _yaml

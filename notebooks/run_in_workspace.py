@@ -19,8 +19,8 @@
 import os
 import sys
 
-dbutils.widgets.text("catalog", "main")  # noqa: F821
-dbutils.widgets.text("schema", "pricing")  # noqa: F821
+dbutils.widgets.text("catalog", "na_act")  # noqa: F821
+dbutils.widgets.text("schema", "consd_sb")  # noqa: F821
 dbutils.widgets.text("table", "", "Full table name (blank = <catalog>.<schema>.gl_master)")  # noqa: F821
 dbutils.widgets.text("sot_premium_table", "", "Premium source of truth (optional)")  # noqa: F821
 dbutils.widgets.text("sot_loss_table", "", "Loss source of truth (optional)")  # noqa: F821
