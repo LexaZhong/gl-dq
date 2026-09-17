@@ -26,8 +26,9 @@ sql_vars:                          # referenced by the SOT queries in <config_di
   sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_premium}
   sot_loss_table: ${DQ_SOT_LOSS_TABLE:-${DQ_CATALOG}.${DQ_SCHEMA}.sot_loss}
 
-config_dir: /Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/config
-knowledge_dir: /Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge
+# config + knowledge live in the UC Volume; override with DQ_CONFIG_DIR=config to dry-run from a laptop
+config_dir: ${DQ_CONFIG_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/config}
+knowledge_dir: ${DQ_KNOWLEDGE_DIR:-/Volumes/${DQ_CATALOG}/${DQ_SCHEMA}/gl_dq/knowledge}
 results:
   type: delta
   table: ${DQ_CATALOG}.${DQ_SCHEMA}.dq_check_results

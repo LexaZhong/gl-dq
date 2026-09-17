@@ -60,6 +60,8 @@ src/gl_dq/summary.py             portfolio summary (records, policy terms, premi
 src/gl_dq/tracker.py             review progress + "re-opened by data" logic
 src/gl_dq/ui/                    Streamlit frame, notes panel, chart theme
 jobs/refresh.py                  runs all checks and appends findings (parquet locally, Delta on Databricks)
+jobs/check_setup.py              preflight: does the profile match the real table?
+jobs/seed_volume.py              copies configs + SOT SQL into the UC volume
 .claude/skills/                  Claude Code skills (below)
 ```
 **Safety:** every column reference is checked against the table schema or configured derived columns.
@@ -84,18 +86,54 @@ They load automatically when Claude Code is opened in this repo. To share them m
 `~/.claude/skills/` or package them as a plugin.
 
 ## Deploy to Databricks
-1. Fill in `config/sql/sot_premium.sql` and `config/sql/sot_loss.sql`.
-2. `databricks bundle deploy -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>`
-3. `python jobs/seed_volume.py --catalog <cat> --schema <schema>`, then adjust column names in any SQL
-   predicates in the Volume YAML if gl_master's columns differ from the synthetic data.
-4. Grants for the app's service principal (if the bundle's `uc_securable` resource is not available):
-   ```sql
-   GRANT USE CATALOG ON CATALOG <cat> TO `<app-sp>`;
-   GRANT USE SCHEMA, CREATE TABLE ON SCHEMA <cat>.<schema> TO `<app-sp>`;
-   GRANT SELECT ON TABLE <cat>.<schema>.gl_master TO `<app-sp>`;   -- plus the SOT tables
-   GRANT READ VOLUME, WRITE VOLUME ON VOLUME <cat>.<schema>.gl_dq TO `<app-sp>`;
-   ```
-5. `databricks bundle run gl_dq_refresh -t dev`, then `databricks bundle run gl_dq_app -t dev`.
+
+**0. Install and authenticate the CLI** (one-off)
+```bash
+brew install databricks                     # or: pip install databricks-cli
+databricks auth login --host https://<your-workspace>.cloud.databricks.com
+pip install -e ".[databricks]"              # databricks-sql-connector + sdk for local runs
+```
+
+**1. Point it at the real table from your laptop first** — read-only, nothing is deployed, and it
+tells you whether the config matches `gl_master` before anything else:
+```bash
+export DATABRICKS_WAREHOUSE_ID=<sql warehouse id>
+export DQ_CATALOG=<catalog> DQ_SCHEMA=<schema>
+python jobs/check_setup.py --profile prod            # verifies every configured column, source and SOT query
+DQ_PROFILE=prod DQ_CONFIG_DIR=config DQ_KNOWLEDGE_DIR=data/knowledge_prod \
+  streamlit run app/app.py                           # the whole dashboard, live on gl_master
+```
+Fix whatever preflight reports in `config/profiles/prod.yaml` (measures, derived columns, policy key,
+segment candidates) and in `config/checks/*.yaml` (candidate keys, `applies_when` predicates, business
+rules), then fill in `config/sql/sot_premium.sql` and `config/sql/sot_loss.sql` with the pricing-study
+queries. Re-run preflight until it is clean.
+
+**2. Deploy the bundle** (creates the UC volume, the refresh job and the Databricks App)
+```bash
+databricks bundle validate -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
+databricks bundle deploy   -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
+python jobs/seed_volume.py --catalog <cat> --schema <schema>   # copies configs + SOT SQL into the volume
+```
+The volume copy is the live config people edit from the app; `seed_volume.py` never overwrites existing
+files unless you pass `--overwrite`.
+
+**3. Grant the app's service principal access** (skip if the bundle's `uc_securable` resource worked)
+```sql
+GRANT USE CATALOG ON CATALOG <cat> TO `<app-sp>`;
+GRANT USE SCHEMA, CREATE TABLE ON SCHEMA <cat>.<schema> TO `<app-sp>`;
+GRANT SELECT ON TABLE <cat>.<schema>.gl_master TO `<app-sp>`;   -- plus the SOT tables
+GRANT READ VOLUME, WRITE VOLUME ON VOLUME <cat>.<schema>.gl_dq TO `<app-sp>`;
+```
+Find the service principal on the app's page in the workspace (Compute → Apps → gl-dq-tracker).
+
+**4. Run it**
+```bash
+databricks bundle run gl_dq_refresh -t dev     # first run: writes <cat>.<schema>.dq_check_results
+databricks bundle run gl_dq_app -t dev         # starts the app, prints its URL
+```
+Share the app URL with the team. Anyone who can open it signs in with SSO; their email is recorded as
+the author of every note and status change. Unpause the job schedule in `databricks.yml` (it ships
+`PAUSED`) once the checks are settled, so the dashboard refreshes on its own.
 
 To try it on Databricks with synthetic data first: upload the parquet files and run
 `synthetic/load_to_delta.py`, then set `DQ_TABLE`, `DQ_SOT_PREMIUM_TABLE` and `DQ_SOT_LOSS_TABLE` on the app.
