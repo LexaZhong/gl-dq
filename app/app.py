@@ -13,6 +13,16 @@ if str(ROOT / "src") not in sys.path:
 
 import streamlit as st  # noqa: E402
 
+try:  # started with `python app/app.py`? Streamlit primitives do nothing without its runtime
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+except ImportError:  # pragma: no cover - older streamlit
+    get_script_run_ctx = None
+if get_script_run_ctx is not None and get_script_run_ctx() is None:
+    sys.exit("This is a Streamlit app; run it with:\n"
+             "    streamlit run app/app.py                  (macOS / Linux)\n"
+             "    .\\.venv\\Scripts\\streamlit run app\\app.py   (Windows PowerShell)\n"
+             "Set the data source first, e.g. DQ_PROFILE=parquet and DQ_PARQUET_TABLE=<path>.")
+
 from gl_dq.ui import state, theme  # noqa: E402,F401
 from gl_dq.ui.components import check_page  # noqa: E402
 from gl_dq.ui.pages import knowledge_page, preprocessing_page, summary_page, tracker_page  # noqa: E402

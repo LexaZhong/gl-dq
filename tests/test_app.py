@@ -120,3 +120,13 @@ def test_tracker_kpis(refreshed, monkeypatch):
     at = _open("tracker", monkeypatch)
     labels = [m.label for m in at.metric]
     assert {"Columns", "Closed", "🔁 Re-opened", "With data engineer", "With actuary"} <= set(labels)
+
+
+def test_running_with_plain_python_explains_itself():
+    """`python app/app.py` must say how to start it, not warn about a missing cache runtime."""
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, APP], capture_output=True, text=True, timeout=120)
+    assert r.returncode != 0
+    assert "streamlit run app/app.py" in (r.stderr + r.stdout)
