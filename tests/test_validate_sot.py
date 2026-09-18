@@ -52,7 +52,7 @@ def test_missing_dimension_is_reported(ctx_injected, tmp_path, capsys):
     from gl_dq.core.storage import LocalStorage
 
     (tmp_path / "sql").mkdir()
-    (tmp_path / "sql" / "sot.sql").write_text("SELECT src, wrtn_prm FROM sot_premium_synth")  # no coverage column
+    (tmp_path / "sql" / "sot.sql").write_text("SELECT src, wrtn_prm FROM sot_premium_synth", encoding="utf-8")  # no coverage column
     cfg = ctx_injected.check_config("premium_recon").model_copy(update={"sot_query": "sql/sot.sql"})
     ctx_injected.config_store = LocalStorage(tmp_path)
     ctx_injected.config_store.write_text("checks/premium_recon.yaml", cfg.model_dump_json())

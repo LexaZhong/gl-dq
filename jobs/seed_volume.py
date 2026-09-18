@@ -38,7 +38,7 @@ def main(argv=None):
         if store.version(rel) and not args.overwrite:
             print(f"skip   {rel} (exists)")
             continue
-        store.write_text(rel, f.read_text())
+        store.write_text(rel, f.read_text(encoding="utf-8"))
         print(f"upload {rel}")
 
 

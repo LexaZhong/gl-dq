@@ -6,7 +6,7 @@ import yaml
 
 from gl_dq.core.results import parse_segment
 
-ISSUES = yaml.safe_load((Path(__file__).resolve().parents[1] / "synthetic" / "injected_issues.yaml").read_text())["issues"]
+ISSUES = yaml.safe_load((Path(__file__).resolve().parents[1] / "synthetic" / "injected_issues.yaml").read_text(encoding="utf-8"))["issues"]
 
 
 def matching(findings, expect):

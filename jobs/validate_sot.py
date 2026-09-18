@@ -43,7 +43,7 @@ def validate(ctx, check: str, print_sql: bool = False) -> list[str]:
     dims, measures = dims_of(ctx, check, cfg), measures_of(ctx, check, cfg)
     dim_map = {d: cfg.dim_map.get(d, d) for d in dims}
     problems: list[str] = []
-    print(f"\n=== {check} · {cfg.sot_query}")
+    print(f"\n=== {check} | {cfg.sot_query}")
 
     sot_sql = ctx.render_user_sql(cfg.sot_query)
     raw = ctx.db.query(ctx.render_sql("sot_columns.sql.j2", sot_sql=sot_sql))
@@ -86,7 +86,7 @@ def validate(ctx, check: str, print_sql: bool = False) -> list[str]:
         rec = reconcile(pipe, sot, present, alias, tol)
         p_tot, s_tot = rec["pipeline"].sum(), rec["sot"].sum()
         diff = p_tot - s_tot
-        print(f"\n{alias}: pipeline {p_tot:,.0f} · source of truth {s_tot:,.0f} · diff {diff:,.0f}"
+        print(f"\n{alias}: pipeline {p_tot:,.0f} | source of truth {s_tot:,.0f} | diff {diff:,.0f}"
               + (f" ({diff / s_tot:+.2%})" if s_tot else ""))
         only = rec[rec["presence"] != "both"]
         if len(only):

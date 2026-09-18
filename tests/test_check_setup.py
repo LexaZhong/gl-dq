@@ -12,10 +12,10 @@ import check_setup  # noqa: E402
 
 
 def _profile(tmp_path, **changes):
-    raw = yaml.safe_load((ROOT / "config" / "profiles" / "synthetic.yaml").read_text())
+    raw = yaml.safe_load((ROOT / "config" / "profiles" / "synthetic.yaml").read_text(encoding="utf-8"))
     raw.update(changes)
     p = tmp_path / "test_profile.yaml"
-    p.write_text(yaml.safe_dump(raw))
+    p.write_text(yaml.safe_dump(raw), encoding="utf-8")
     return str(p)
 
 
@@ -109,3 +109,32 @@ def test_export_extract_writes_the_expected_paths(ctx_injected, monkeypatch, cap
     assert any(c.endswith("/extract/sot_premium") for c in calls)
     assert any(c.endswith("/extract/sot_loss") for c in calls)
     assert any("LIMIT 1000" in c for c in calls)
+
+
+def test_file_io_and_console_output_are_portable():
+    """Windows defaults to cp1252: every file read must name UTF-8, and job output must be ASCII."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    for path in sorted((root / "src").rglob("*.py")) + sorted((root / "jobs").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r"\.read_text\(\s*\)", text):
+            line = text[:m.start()].count("\n") + 1
+            raise AssertionError(f"{path.name}:{line} reads a file with the platform encoding; pass encoding='utf-8'")
+    storage = (root / "src" / "gl_dq" / "core" / "storage.py").read_text(encoding="utf-8")
+    for call in re.findall(r"\.(?:read_text|write_text)\([^)]*\)", storage):
+        assert "encoding" in call, f"storage.py: {call} must name an encoding"
+    for path in sorted((root / "jobs").glob("*.py")):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "print(" in line:
+                assert line.isascii(), f"{path.name}:{i} prints non-ASCII, which a cp1252 console cannot encode"
+
+
+def test_non_ascii_round_trips_through_storage(tmp_path):
+    from gl_dq.core.knowledge import KnowledgeStore, Note
+    from gl_dq.core.storage import LocalStorage
+
+    store = KnowledgeStore(LocalStorage(tmp_path))
+    store.add_note("expn_bs", Note(author="actuaire@co.com", text="Prime non alignée — écart de 3 % · 100°"))
+    assert "écart de 3 %" in store.get("expn_bs")[0].notes[0].text
+    assert "écart" in (tmp_path / "variables" / "expn_bs.yaml").read_text(encoding="utf-8")

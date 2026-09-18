@@ -28,7 +28,7 @@ def parquet_ctx(data_dirs, tmp_path_factory):
                                               "where": None},
                             "loss_recon": {"sot_query": "sql/sot_loss.sql", "segments": ["src"], "where": None,
                                            "tolerance_claims": {"abs": 5, "pct": 0.02}}},
-    }))
+    }), encoding="utf-8")
     return load_context(str(profile))
 
 
@@ -65,7 +65,8 @@ def test_missing_optional_source_is_reported_not_fatal(data_dirs, tmp_path):
         "extends": "parquet", "name": "no study",
         "parquet_views": {"gl_master": str(folder / "gl_master_synth.parquet"),
                           "sot_premium": str(tmp_path / "does_not_exist")},
-        "knowledge_dir": str(tmp_path / "k"), "results": {"type": "parquet", "path": str(tmp_path / "r")}}))
+        "knowledge_dir": str(tmp_path / "k"), "results": {"type": "parquet", "path": str(tmp_path / "r")}}),
+        encoding="utf-8")
     ctx = load_context(str(profile))
     assert "sot_premium" in ctx.db.missing
     assert ctx.db.query("SELECT COUNT(*) AS n FROM gl_master").iloc[0]["n"] > 0

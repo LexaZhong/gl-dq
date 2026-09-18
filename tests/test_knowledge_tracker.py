@@ -44,7 +44,7 @@ def test_parquet_results_round_trip_through_storage(tmp_path):
 
 
 def test_workflow_yaml_matches_and_validates():
-    wf = Workflow.model_validate(yaml.safe_load((ROOT / "config" / "workflow.yaml").read_text()))
+    wf = Workflow.model_validate(yaml.safe_load((ROOT / "config" / "workflow.yaml").read_text(encoding="utf-8")))
     assert wf.keys() == Workflow().keys()
     assert {"resolved", "no_issue", "preprocess_in_modeling", "wont_fix"} == wf.done_keys()
 

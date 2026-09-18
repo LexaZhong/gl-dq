@@ -58,7 +58,7 @@ def main(argv=None):
             os.environ[env] = val
 
     ctx = load_context(args.profile)
-    print(f"profile {ctx.profile} · backend {ctx.project.backend} · table {ctx.project.table}")
+    print(f"profile {ctx.profile} | backend {ctx.project.backend} | table {ctx.project.table}")
     problems: list[str] = []
 
     n = ctx.db.query(f"SELECT COUNT(*) AS n FROM {ctx.project.table}").iloc[0]["n"]
@@ -77,7 +77,7 @@ def main(argv=None):
             elif not ctx.schema.has(c):
                 missing.append(c)
         status = BAD if missing else OK
-        print(f"{status} {label}: {len(cols)} referenced" + (f" · MISSING {', '.join(missing)}" if missing else ""))
+        print(f"{status} {label}: {len(cols)} referenced" + (f" | MISSING {', '.join(missing)}" if missing else ""))
         if missing:
             problems.append(f"{label}: {', '.join(missing)}")
 

@@ -109,7 +109,7 @@ def load_raw_profile(profile: str, _seen: tuple[str, ...] = ()) -> dict:
     """Profile YAML, with `extends: <other profile>` merged underneath it (deep merge, child wins)."""
     if profile in _seen:
         raise ValueError(f"circular profile inheritance: {' -> '.join([*_seen, profile])}")
-    raw = yaml.safe_load(profile_path(profile).read_text()) or {}
+    raw = yaml.safe_load(profile_path(profile).read_text(encoding="utf-8")) or {}
     base = raw.pop("extends", None)
     return deep_merge(load_raw_profile(base, (*_seen, profile)), raw) if base else raw
 

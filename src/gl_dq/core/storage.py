@@ -40,13 +40,13 @@ class LocalStorage(Storage):
 
     def read_text(self, path):
         p = self._p(path)
-        return p.read_text() if p.exists() else None
+        return p.read_text(encoding="utf-8") if p.exists() else None
 
     def write_text(self, path, text):
         p = self._p(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(p.suffix + ".tmp")
-        tmp.write_text(text)
+        tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, p)
 
     def read_bytes(self, path):
