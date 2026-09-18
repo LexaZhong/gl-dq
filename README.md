@@ -36,6 +36,21 @@ bin, exclude rows, derive or custom, each with parameters, sources and a rationa
 closed, its current data status is saved, so if a later refresh makes the data worse it is flagged 🔁 re-opened.
 
 ## Quick start (local, synthetic data)
+
+<details><summary>Windows (PowerShell) — same steps, different syntax</summary>
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\pip install -e ".[local,dev]"
+$env:DQ_PROFILE = "parquet"                        # PowerShell has no `export`
+$env:DQ_PARQUET_TABLE = "data/extract/gl_master.parquet"
+.\.venv\Scripts\python jobs\check_setup.py --profile parquet
+.\.venv\Scripts\python jobs\refresh.py --profile parquet
+.\.venv\Scripts\streamlit run app\app.py
+```
+Use forward slashes in paths, or double the backslashes. `Remove-Item Env:DQ_PARQUET_TABLE` clears a variable.
+</details>
+
 ```bash
 python3 -m venv .venv --system-site-packages && .venv/bin/pip install -e ".[local,dev]"
 .venv/bin/python synthetic/generate.py --out data/                 # data with injected issues

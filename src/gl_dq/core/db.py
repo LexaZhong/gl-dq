@@ -132,7 +132,8 @@ class ParquetDatabase(DuckDBDatabase):
         for name, path in self.views.items():
             if not is_identifier(name):
                 raise ValueError(f"invalid view name {name!r}: use a plain identifier")
-            target = f"{path.rstrip('/')}/*.parquet" if Path(path).is_dir() else path
+            target = str(Path(path) / "*.parquet") if Path(path).is_dir() else str(path)
+            target = target.replace("\\", "/")  # DuckDB globs use forward slashes on every platform
             try:
                 self._con.execute(
                     f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM read_parquet({Dialect.lit(target)})")
