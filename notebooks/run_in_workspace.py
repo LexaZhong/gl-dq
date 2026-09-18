@@ -106,7 +106,22 @@ display(summarize(ctx, ["src", "covg_type_desc"]))  # noqa: F821
 
 # COMMAND ----------
 # MAGIC %md
-# MAGIC ## 4. Set a column's review status from here (optional)
+# MAGIC ## 4. Export a parquet extract (optional)
+# MAGIC Lets the dashboard run with `DQ_PROFILE=parquet` - from a laptop, an app or a job - with no
+# MAGIC warehouse and no Spark. Same checks, same config; only the source changes.
+
+# COMMAND ----------
+# volume = os.environ.get("DQ_VOLUME_DIR", "/Volumes/.../GL/gl_master_cleaning")
+# spark.table(p.table).write.mode("overwrite").parquet(f"{volume}/extract/gl_master")
+# spark.sql(open(os.path.join(ROOT, "config/sql/sot_premium_prod.sql")).read()) \
+#      .write.mode("overwrite").parquet(f"{volume}/extract/sot_premium")   # after Jinja substitution
+#
+# then, anywhere:
+#   DQ_PROFILE=parquet DQ_PARQUET_TABLE=<volume>/extract/gl_master streamlit run app/app.py
+
+# COMMAND ----------
+# MAGIC %md
+# MAGIC ## 5. Set a column's review status from here (optional)
 # MAGIC The dashboard is the normal way to do this; a notebook works when you are scripting.
 
 # COMMAND ----------

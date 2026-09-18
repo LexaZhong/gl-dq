@@ -5,6 +5,7 @@ import os
 import re
 import threading
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import pandas as pd
 
@@ -114,6 +115,36 @@ class DuckDBDatabase(Database):
         return {r.column_name: r.column_type.lower() for r in df.itertuples()}
 
 
+class ParquetDatabase(DuckDBDatabase):
+    """Parquet files queried directly (DuckDB in memory): each view name becomes a table.
+
+    Paths may be a single file, a folder or a glob, local or a /Volumes path that the process can
+    read. Nothing is copied - DuckDB reads the parquet in place.
+    """
+
+    def __init__(self, views: dict[str, str]):
+        import duckdb
+
+        self.views = dict(views)
+        self._con = duckdb.connect(":memory:")
+        self._lock = threading.Lock()
+        self.missing: dict[str, str] = {}
+        for name, path in self.views.items():
+            if not is_identifier(name):
+                raise ValueError(f"invalid view name {name!r}: use a plain identifier")
+            target = f"{path.rstrip('/')}/*.parquet" if Path(path).is_dir() else path
+            try:
+                self._con.execute(
+                    f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM read_parquet({Dialect.lit(target)})")
+            except Exception as e:  # a missing optional source (e.g. no study extract) must not break the rest
+                self.missing[name] = f"{target}: {e}"
+
+    def describe(self, table):
+        if table in self.missing:
+            raise FileNotFoundError(f"no parquet found for {table!r} ({self.missing[table]})")
+        return super().describe(table)
+
+
 class DatabricksDatabase(Database):
     """SQL warehouse via databricks-sql-connector.
 
@@ -190,6 +221,16 @@ def make_database(project) -> Database:
         if not os.path.isabs(path):
             path = str(REPO_ROOT / path)
         return DuckDBDatabase(path)
+    if project.backend == "parquet":
+        from gl_dq import REPO_ROOT
+
+        views = {}
+        for name, path in project.parquet_views.items():
+            path = expand_env(path)
+            views[name] = path if os.path.isabs(path) else str(REPO_ROOT / path)
+        if not views:
+            raise RuntimeError("backend 'parquet' needs parquet_views: {<table name>: <file, folder or glob>}")
+        return ParquetDatabase(views)
     if project.backend == "spark":
         return SparkDatabase()
     if project.backend == "databricks":

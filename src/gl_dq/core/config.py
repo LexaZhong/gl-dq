@@ -34,9 +34,11 @@ class ProjectConfig(BaseModel):
     """A profile: which table, which backend, where config/knowledge/results live."""
 
     name: str = "GL master"
-    backend: Literal["duckdb", "databricks", "spark"] = "duckdb"  # spark = inside a Databricks notebook/job
+    backend: Literal["duckdb", "databricks", "spark", "parquet"] = "duckdb"
+    # spark = inside a Databricks notebook/job; parquet = read parquet files directly (DuckDB)
     duckdb_path: str | None = None
     warehouse_id: str | None = None
+    parquet_views: dict[str, str] = {}  # backend "parquet": table name -> file, folder or glob
     table: str
     src_col: str = "src"
     sources: list[str] = ["BOP", "BMQ", "CMQ"]

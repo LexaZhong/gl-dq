@@ -111,7 +111,21 @@ see *Deploy to Databricks* below. The bundle is the easy path, but you can also 
 (Compute → Apps → Create app → deploy from a workspace folder) pointing at the Git folder from A, since `app.yaml`
 sits at the repo root.
 
-**C. From your laptop against the workspace** — the full dashboard, no deployment, only `SELECT` rights:
+**C. Parquet extract (no warehouse, no Spark, no Delta)** — point the dashboard at parquet files:
+```bash
+DQ_PROFILE=parquet DQ_PARQUET_TABLE=/Volumes/.../extract/gl_master \
+  DQ_PARQUET_SOT_PREMIUM=/Volumes/.../extract/sot_premium \
+  DQ_PARQUET_SOT_LOSS=/Volumes/.../extract/sot_loss \
+  python jobs/check_setup.py --profile parquet
+DQ_PROFILE=parquet DQ_PARQUET_TABLE=... streamlit run app/app.py
+```
+Each view is a file, a folder or a glob; DuckDB reads them in place (nothing is copied). Column names,
+measures, thresholds and the source-of-truth queries are inherited from prod, so an extract is checked
+exactly like the table - a test asserts both backends produce identical findings. The study extracts are
+optional: without them everything except the two reconciliations still runs. Notebook cell 4 writes the
+extract.
+
+**D. From your laptop against the workspace** — the full dashboard, no deployment, only `SELECT` rights:
 ```bash
 export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net DATABRICKS_TOKEN=<pat>
 export DATABRICKS_WAREHOUSE_ID=<id> DQ_CATALOG=<cat> DQ_SCHEMA=<schema>
