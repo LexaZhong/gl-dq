@@ -10,6 +10,35 @@ import numpy as np
 import pandas as pd
 
 
+NULL_LABEL = "<null>"
+
+
+def distinct_values(ctx, column: str, limit: int = 1000) -> list[str]:
+    """Values of a column, as strings, for a filter picker. Nulls appear as '<null>'."""
+    ref = ctx.schema.ref(ctx.schema.validate([column])[0])
+    df = ctx.db.query(f"SELECT DISTINCT CAST({ref} AS STRING) AS v FROM {ctx.project.table} "
+                      f"ORDER BY 1 LIMIT {int(limit)}")
+    values = [NULL_LABEL if pd.isna(v) else str(v) for v in df["v"]]
+    return sorted(values, key=lambda v: (v == NULL_LABEL, v))
+
+
+def filter_clause(ctx, filters: dict[str, list[str]] | None) -> str | None:
+    """SQL for {column: [values]} - empty or missing means 'all'. Values are escaped literals."""
+    lit, parts = ctx.dialect.lit, []
+    for column, values in (filters or {}).items():
+        values = [v for v in (values or [])]
+        if not values:
+            continue  # no selection = no restriction
+        ref = ctx.schema.ref(ctx.schema.validate([column])[0])
+        chosen = [v for v in values if v != NULL_LABEL]
+        clause = f"CAST({ref} AS STRING) IN ({', '.join(lit(v) for v in chosen)})" if chosen else None
+        if NULL_LABEL in values:
+            null_clause = f"{ref} IS NULL"
+            clause = f"({clause} OR {null_clause})" if clause else null_clause
+        parts.append(clause)
+    return " AND ".join(f"({p})" for p in parts) if parts else None
+
+
 def summarize(ctx, dims: list[str] | None = None, where: str | None = None) -> pd.DataFrame:
     dims = ctx.schema.validate(list(dims or []))
     sql = ctx.render_sql("summary.sql.j2", dims=dims,

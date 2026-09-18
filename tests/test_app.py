@@ -130,3 +130,27 @@ def test_running_with_plain_python_explains_itself():
     r = subprocess.run([sys.executable, APP], capture_output=True, text=True, timeout=120)
     assert r.returncode != 0
     assert "streamlit run app/app.py" in (r.stderr + r.stdout)
+
+
+def test_summary_filters_narrow_the_page(refreshed, monkeypatch):
+    at = _open("summary", monkeypatch)
+    records = lambda a: next(m.value for m in a.metric if m.label == "Records")  # noqa: E731
+    before = records(at)
+    at.multiselect(key="sum_f_src").set_value(["BOP"]).run()
+    assert not at.exception, [e.value for e in at.exception]
+    after = records(at)
+    assert after != before and int(after.replace(",", "")) < int(before.replace(",", ""))
+    assert any("Filtered to" in m.value for m in at.caption)
+    # the filter reaches the tables, not just the KPIs
+    table = next(df for df in at.dataframe if "src" in getattr(df.value, "columns", []))
+    assert set(table.value["src"]) == {"BOP"}
+    at.multiselect(key="sum_f_src").set_value([]).run()
+    assert records(at) == before
+
+
+def test_summary_filter_options_follow_the_dimensions(refreshed, monkeypatch):
+    at = _open("summary", monkeypatch)
+    assert {"Filter src", "Filter covg_type_desc"} <= {m.label for m in at.multiselect}
+    at.multiselect(key="sum_dims").set_value(["loc_st_abbr"]).run()
+    labels = {m.label for m in at.multiselect}
+    assert "Filter loc_st_abbr" in labels and "Filter covg_type_desc" not in labels

@@ -54,3 +54,18 @@ def test_limit_series_keeps_largest():
     df = pd.DataFrame({"segment": list("aabbbcccc"), "w": [5, 5, 1, 1, 1, 2, 2, 2, 2]})
     kept, dropped = limit_series(df, "segment", max_series=2, weight="w")
     assert set(kept["segment"]) == {"a", "c"} and dropped == ["b"]
+
+
+def test_colours_do_not_repaint_when_values_are_filtered_out():
+    """Color follows the entity: filtering must not shift the survivors onto other hues."""
+    from gl_dq.ui.theme import entity_colors
+
+    domain = ["Liquor Liability", "Medical Payments", "Personal & Advertising Injury",
+              "Premises/Operations", "Products/Completed Ops"]
+    full = entity_colors(domain, domain)
+    subset = entity_colors(["Premises/Operations", "Liquor Liability"], domain)
+    assert subset["Premises/Operations"] == full["Premises/Operations"]
+    assert subset["Liquor Liability"] == full["Liquor Liability"]
+    assert len(set(full.values())) == len(domain)          # distinct hues
+    # without a domain the assignment follows whatever happens to be present (the bug this guards)
+    assert entity_colors(["Premises/Operations", "Liquor Liability"])["Premises/Operations"] != full["Premises/Operations"]

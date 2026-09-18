@@ -10,6 +10,7 @@ import streamlit as st
 from gl_dq.core.config import dump_yaml
 from gl_dq.core.knowledge import ConflictError, export_markdown, preprocessing_spec
 from gl_dq.core.results import STATUS_ICON, parse_segment
+from gl_dq.summary import filter_clause
 from gl_dq.tracker import build_tracker, snapshots_for
 from gl_dq.ui import state
 from gl_dq.ui.components import preprocessing_editor, status_label, step_summary
@@ -32,20 +33,43 @@ def summary_page():
     st.caption(f"`{ctx.project.table}` · a policy is one distinct {' + '.join(f'`{c}`' for c in ctx.project.policy_key)} "
                f"· premium is `{m.written_premium}`. Queried live.")
 
-    totals = state.summary([])
+    opts = [o for o in ctx.schema.names() if o in (ctx.project.segment_candidates or []) or o == ctx.project.src_col]
+    default = [d for d in [ctx.project.src_col, "covg_type_desc"] if d in opts]
+    dims = st.multiselect("Summarize by", opts, default=default, key="sum_dims")
+
+    # filter on the same dimensions: empty = everything
+    filters: dict[str, list[str]] = {}
+    if dims:
+        for col, dim in zip(st.columns(min(len(dims), 4)), dims):
+            try:
+                values = state.distinct_values(dim)
+            except Exception as e:  # noqa: BLE001
+                col.caption(f"{dim}: {e}")
+                continue
+            picked = col.multiselect(f"Filter {dim}", values, default=[], key=f"sum_f_{dim}",
+                                     placeholder=f"All ({len(values)})")
+            if picked:
+                filters[dim] = picked
+    where = filter_clause(ctx, filters)
+
+    totals = state.summary([], where)
     t = totals.iloc[0]
     k = st.columns(4)
     k[0].metric("Records", f"{int(t.records):,}")
     k[1].metric("Policies", f"{int(t.policies):,}", help="Distinct policy terms")
     k[2].metric("Written premium", compact(t.premium), help=f"{t.premium:,.2f}")
-    k[3].metric("Premium per policy", f"{t.premium_per_policy:,.0f}")
-
-    opts = [o for o in ctx.schema.names() if o in (ctx.project.segment_candidates or []) or o == ctx.project.src_col]
-    default = [d for d in [ctx.project.src_col, "covg_type_desc"] if d in opts]
-    dims = st.multiselect("Summarize by", opts, default=default, key="sum_dims")
-    df = state.summary(dims)
+    k[3].metric("Premium per policy", f"{t.premium_per_policy:,.0f}" if t.policies else "-")
+    if where:
+        full = state.summary([]).iloc[0]
+        shown = "; ".join(f"**{col}**: " + ", ".join(vals) for col, vals in filters.items())
+        share = f" ({t.premium / full.premium:.1%} of premium)" if full.premium else ""
+        st.caption(f"Filtered to {shown} — {int(t.records):,} of {int(full.records):,} records{share}")
     if not dims:
-        st.dataframe(df, hide_index=True, use_container_width=True)
+        st.dataframe(totals, hide_index=True, use_container_width=True)
+        return
+    df = state.summary(dims, where)
+    if df.empty:
+        st.warning("No rows match these filters.")
         return
 
     x, color = dims[0], (dims[1] if len(dims) > 1 else None)
@@ -58,7 +82,16 @@ def summary_page():
         if dropped:
             st.caption(f"Charts show the {plot[color].nunique()} largest {color} values by premium; "
                        f"{len(dropped)} smaller ones are in the tables below.")
-    known = ctx.project.sources if color == ctx.project.src_col else None
+    # colour by the column's full domain, so filtering never repaints the values that survive
+    if color == ctx.project.src_col:
+        known = ctx.project.sources
+    elif color in dims:
+        try:
+            known = state.distinct_values(color)
+        except Exception:  # noqa: BLE001
+            known = None
+    else:
+        known = None
     enc = dict(color=color, color_discrete_map=entity_colors(plot[color].astype(str), known)) if color \
         else dict(color_discrete_sequence=[CATEGORICAL[0]])
     cols = st.columns(3)
@@ -71,7 +104,7 @@ def summary_page():
 
     if len(dims) > 1:
         st.markdown(f"**By {dims[0]}**")
-        _summary_table(state.summary([dims[0]]), [dims[0]], key="sum_first")
+        _summary_table(state.summary([dims[0]], where), [dims[0]], key="sum_first")
     st.markdown("**By " + ", ".join(dims) + "**")
     _summary_table(df, dims, key="sum_full")
     if len(dims) == 2:
@@ -83,7 +116,7 @@ def summary_page():
     with st.expander("SQL"):
         from gl_dq.summary import summary_sql
 
-        st.code(summary_sql(ctx, dims), language="sql")
+        st.code(summary_sql(ctx, dims, where), language="sql")
 
 
 def _summary_table(df, dims, key: str):

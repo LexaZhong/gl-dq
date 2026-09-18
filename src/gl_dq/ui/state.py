@@ -95,14 +95,25 @@ def cached_method(name: str, cfg, method: str, **kwargs):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _summary(profile_name: str, dims: tuple):
+def _summary(profile_name: str, dims: tuple, where: str | None):
     from gl_dq.summary import summarize
 
-    return summarize(_context(profile_name), list(dims))
+    return summarize(_context(profile_name), list(dims), where)
 
 
-def summary(dims):
-    return _summary(profile(), tuple(dims))
+def summary(dims, where: str | None = None):
+    return _summary(profile(), tuple(dims), where)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _distinct_values(profile_name: str, column: str):
+    from gl_dq.summary import distinct_values
+
+    return distinct_values(_context(profile_name), column)
+
+
+def distinct_values(column: str):
+    return _distinct_values(profile(), column)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
