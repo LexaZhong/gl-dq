@@ -111,10 +111,9 @@ display(summarize(ctx, ["src", "covg_type_desc"]))  # noqa: F821
 # MAGIC warehouse and no Spark. Same checks, same config; only the source changes.
 
 # COMMAND ----------
-# volume = os.environ.get("DQ_VOLUME_DIR", "/Volumes/.../GL/gl_master_cleaning")
-# spark.table(p.table).write.mode("overwrite").parquet(f"{volume}/extract/gl_master")
-# spark.sql(open(os.path.join(ROOT, "config/sql/sot_premium_prod.sql")).read()) \
-#      .write.mode("overwrite").parquet(f"{volume}/extract/sot_premium")   # after Jinja substitution
+# import export_extract  # noqa: E402
+# export_extract.main(["--profile", "workspace"])            # -> <volume>/extract/{gl_master,sot_premium,sot_loss}
+# export_extract.main(["--profile", "workspace", "--sample", "200000"])   # a smaller share
 #
 # then, anywhere:
 #   DQ_PROFILE=parquet DQ_PARQUET_TABLE=<volume>/extract/gl_master streamlit run app/app.py

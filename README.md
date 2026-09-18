@@ -61,6 +61,7 @@ src/gl_dq/tracker.py             review progress + "re-opened by data" logic
 src/gl_dq/ui/                    Streamlit frame, notes panel, chart theme
 jobs/refresh.py                  runs all checks and appends findings (parquet locally, Delta on Databricks)
 jobs/check_setup.py              preflight: does the profile match the real table?
+jobs/export_extract.py           write a parquet extract of gl_master + the study queries
 jobs/validate_sot.py             checks a source-of-truth query and prints a comparison SQL
 notebooks/run_in_workspace.py    run the checks from a Databricks notebook (Spark backend)
 jobs/seed_volume.py              copies configs + SOT SQL into the UC volume
@@ -111,7 +112,12 @@ see *Deploy to Databricks* below. The bundle is the easy path, but you can also 
 (Compute → Apps → Create app → deploy from a workspace folder) pointing at the Git folder from A, since `app.yaml`
 sits at the repo root.
 
-**C. Parquet extract (no warehouse, no Spark, no Delta)** — point the dashboard at parquet files:
+**C. Parquet extract (no warehouse, no Spark, no Delta)** — create it once from a notebook or job:
+```bash
+python jobs/export_extract.py --profile workspace          # -> <volume>/extract/{gl_master,sot_premium,sot_loss}
+python jobs/export_extract.py --profile workspace --sample 200000   # a smaller share
+```
+then point the dashboard at those files:
 ```bash
 DQ_PROFILE=parquet DQ_PARQUET_TABLE=/Volumes/.../extract/gl_master \
   DQ_PARQUET_SOT_PREMIUM=/Volumes/.../extract/sot_premium \

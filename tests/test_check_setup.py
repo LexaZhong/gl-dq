@@ -76,3 +76,36 @@ def test_spark_backend_uses_the_session(monkeypatch):
     assert db.describe("cat.sch.gl_master") == {"src": "string", "expo_amt": "double"}
     assert db.query("SELECT 1 AS n")["n"].tolist() == [1]
     assert seen == ["DESCRIBE TABLE cat.sch.gl_master", "SELECT 1 AS n"]
+
+
+def test_export_extract_writes_the_expected_paths(ctx_injected, monkeypatch, capsys):
+    """The extract layout must match what the parquet profile reads back."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jobs"))
+    import export_extract
+
+    calls = []
+
+    class FakeWriter:
+        def mode(self, m):
+            return self
+
+        def parquet(self, path):
+            calls.append(path)
+
+    class FakeDF:
+        write = FakeWriter()
+
+    class FakeSpark:
+        def sql(self, q):
+            calls.append(q.split("\n")[0][:60])
+            return FakeDF()
+
+    monkeypatch.setattr(ctx_injected, "db", type("D", (), {"spark": FakeSpark()})(), raising=False)
+    written = export_extract.export(ctx_injected, "/Volumes/vol/GL/gl_master_cleaning/extract", sample=1000)
+    assert written["gl_master"].endswith("/extract/gl_master")
+    assert set(written) == {"gl_master", "sot_premium", "sot_loss"}
+    assert any(c.endswith("/extract/sot_premium") for c in calls)
+    assert any(c.endswith("/extract/sot_loss") for c in calls)
+    assert any("LIMIT 1000" in c for c in calls)
