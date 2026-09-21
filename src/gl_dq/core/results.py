@@ -36,6 +36,42 @@ def _fmt(v) -> str:
     return str(v)
 
 
+NULL_TEXT = "<null>"
+
+
+def value_sort_key(v):
+    """Sort one level value: numbers numerically, text alphabetically, nulls last.
+
+    Segment labels are strings, so 'pol_yr=2019' would otherwise sort as text and put 10 before 9.
+    """
+    s = _fmt(v)
+    if s == NULL_TEXT:
+        return (2, 0.0, "")
+    try:
+        return (0, float(s), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, s)
+
+
+def segment_sort_key(segment: str):
+    """Sort key for a segment label ('src=BMQ|pol_yr=2019'), part by part.
+
+    A plain value ('2019', 'BOP') is sorted as one part, so the same key works for the
+    colour/facet columns of a chart as well as for full segment labels.
+    """
+    s = str(segment)
+    if s == "ALL":
+        return ((0, 0.0, ""),)
+    if "=" not in s:
+        return (value_sort_key(s),)
+    return tuple(value_sort_key(v) for v in parse_segment(s).values())
+
+
+def sort_segments(segments) -> list[str]:
+    """Distinct segment labels in natural order (for tables, axes and category_orders)."""
+    return sorted(dict.fromkeys(str(s) for s in segments), key=segment_sort_key)
+
+
 def grade(value: float | None, warn: float | None, fail: float | None, higher_is_worse: bool = True) -> str:
     """Status for a metric against thresholds (strictly beyond threshold = flagged)."""
     if value is None or (isinstance(value, float) and np.isnan(value)):

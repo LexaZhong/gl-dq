@@ -16,7 +16,7 @@ from pydantic import BaseModel, field_validator
 from gl_dq.checks.base import Check, CheckResult
 from gl_dq.core.config import CheckConfig
 from gl_dq.core.registry import register_check
-from gl_dq.core.results import grade, segment_key
+from gl_dq.core.results import grade, segment_key, segment_sort_key, sort_segments, value_sort_key
 
 LogMethod = Literal["none", "log1p", "log10", "signed_log"]
 PRESET_BINS = [4, 10, 20, 50, 100]
@@ -101,11 +101,21 @@ def psi(actual: np.ndarray, expected: np.ndarray, eps: float = 1e-4) -> float:
     return float(np.sum((a - e) * np.log(a / e)))
 
 
-def _sort_key(v):
-    try:
-        return (0, float(v), "")
-    except (TypeError, ValueError):
-        return (1, 0.0, str(v))
+def _isna(v) -> bool:
+    """True for None, NaN and pandas NA. `pd.NA is not None`, which is what broke list(pcts)."""
+    if v is None or v is pd.NA or v is pd.NaT:
+        return True
+    return isinstance(v, float) and np.isnan(v)
+
+
+def _as_list(v, size: int) -> list:
+    """A percentile array from SQL as a plain list; NULL (pd.NA) becomes [None] * size."""
+    return [None] * size if _isna(v) else list(v)
+
+
+def _seg_or_num(col):
+    """pandas sort key: order segment labels naturally, leave other columns alone."""
+    return col.map(lambda v: segment_sort_key(str(v))) if col.name == "segment" else col
 
 
 @register_check("distribution")
@@ -173,13 +183,22 @@ class Distribution(Check):
         findings, stats, pct_rows = [], [], []
         for _, r in df.iterrows():
             seg = self._seg(r, spec.group_by)
-            pcts = list(r["pcts"]) if r["pcts"] is not None else [None] * len(probs)
-            p99 = pcts[probs.index(0.99)]
             nn = int(r["n_nonnull"] or 0)
-            pct_neg = (r["n_negative"] or 0) / nn if nn else None
-            ratio = (r["max"] / p99) if p99 and p99 > 0 and r["max"] is not None else None
+            pcts = _as_list(r["pcts"], len(probs))
+            if not nn:  # no values at all: report the segment, do not try to describe it
+                findings.append(dict(variable=spec.name, item="no data", segment=seg, metric="n_nonnull",
+                                     value=0, threshold=None, status="info",
+                                     detail=f"no non-null {spec.name} in {int(r['n_rows']):,} rows"))
+                stats.append({"segment": seg, "n_rows": int(r["n_rows"]), "n_nonnull": 0, "pct_zero": None,
+                              "pct_negative": None, "min": None, "mean": None, "p50": None, "p99": None,
+                              "max": None, "std": None, "max_to_p99": None})
+                continue
+            p99 = pcts[probs.index(0.99)]
+            pct_neg = (r["n_negative"] or 0) / nn
+            mx = None if _isna(r["max"]) else r["max"]
+            ratio = (mx / p99) if p99 and p99 > 0 and mx is not None else None
             stats.append({"segment": seg, "n_rows": int(r["n_rows"]), "n_nonnull": nn,
-                          "pct_zero": (r["n_zero"] or 0) / nn if nn else None, "pct_negative": pct_neg,
+                          "pct_zero": (r["n_zero"] or 0) / nn, "pct_negative": pct_neg,
                           "min": r["min"], "mean": r["mean"], "p50": pcts[probs.index(0.5)] if 0.5 in probs else None,
                           "p99": p99, "max": r["max"], "std": r["std"], "max_to_p99": ratio})
             pct_rows += [{"segment": seg, "percentile": p, "value": v} for p, v in zip(probs, pcts)]
@@ -192,14 +211,14 @@ class Distribution(Check):
                 findings.append(dict(variable=spec.name, item="outliers", segment=seg, metric="max_to_p99",
                                      value=ratio, threshold=spec.outlier_ratio,
                                      status=grade(ratio, spec.outlier_ratio, spec.outlier_ratio * 10),
-                                     detail=f"max {r['max']:,.2f} vs p99 {p99:,.2f}"))
+                                     detail=f"max {mx:,.2f} vs p99 {p99:,.2f}"))
         tables = {"stats": pd.DataFrame(stats), "percentiles": pd.DataFrame(pct_rows)}
 
         if spec.psi and spec.psi.across in spec.group_by:
             edge_probs = [i / spec.psi.bins for i in range(1, spec.psi.bins)]
             lim = self.query(f"{spec.name} psi edges", self.ctx.render_sql(
                 "dist_limits.sql.j2", v=x, probs=edge_probs, where=f"{x} IS NOT NULL")).iloc[0]
-            edges = sorted({float(e) for e in (lim["limits"] if lim["limits"] is not None else [])})
+            edges = sorted({float(e) for e in _as_list(lim["limits"], 0) if not _isna(e)})
             if edges:
                 case = "CASE " + " ".join(f"WHEN {x} <= {lit(e)} THEN {i}" for i, e in enumerate(edges)) + f" ELSE {len(edges)} END"
                 counts = self.query(f"{spec.name} psi buckets", self.ctx.render_sql(
@@ -239,7 +258,7 @@ class Distribution(Check):
         total = self.query(f"{spec.name} excluded", f"SELECT COUNT(*) AS n FROM {self.project.table} "
                                                      f"WHERE {x} IS NOT NULL AND NOT ({valid})").iloc[0]["n"]
         counts.attrs.update(excluded=int(total or 0), lo=lo, hi=hi, method=spec.log_scale.method)
-        return counts.sort_values(["segment", "bucket"])
+        return counts.sort_values(["segment", "bucket"], key=_seg_or_num)
 
     # ---- categorical -----------------------------------------------------------
     def profile_categorical(self, spec: VarSpec) -> tuple[list[dict], dict[str, pd.DataFrame]]:
@@ -256,7 +275,8 @@ class Distribution(Check):
         n_cat = df[~df["category"].isin(["<null>", "<other>"])].groupby("segment")["category"].nunique()
         tables["summary"] = pd.DataFrame({"n_rows": seg_n, "n_categories": n_cat}).reset_index()
         top = df.sort_values("n", ascending=False).groupby("segment").head(spec.top_n)
-        tables["top"] = top[["segment", "category", "n", "share"]].sort_values(["segment", "n"], ascending=[True, False])
+        tables["top"] = top[["segment", "category", "n", "share"]].sort_values(
+            ["segment", "n"], ascending=[True, False], key=_seg_or_num)
 
         f, psi_tbl = self._psi_findings(spec, df, "category")
         findings += f
@@ -269,7 +289,7 @@ class Distribution(Check):
             new_rows = []
             part_key = df[others].astype(str).agg("|".join, axis=1) if others else pd.Series("", index=df.index)
             for _, part in df.assign(_p=part_key).groupby("_p"):
-                order = sorted(part[across].unique(), key=_sort_key)
+                order = sorted(part[across].unique(), key=value_sort_key)
                 seen: set = set()
                 for i, val in enumerate(order):
                     cur = part[part[across] == val]
@@ -414,7 +434,7 @@ class Distribution(Check):
         if flagged:
             st.warning(f"{len(flagged)} flagged finding(s) for {name}")
         if kind == "numeric":
-            all_segs = list(tables["stats"].sort_values("n_rows", ascending=False)["segment"])
+            all_segs = sort_segments(tables["stats"]["segment"])
             chosen = all_segs
             if len(all_segs) > MAX_SERIES and len(spec.group_by) > 2:
                 st.caption(f"{len(all_segs)} segments at this level — charts show the segments you pick "
@@ -434,9 +454,9 @@ class Distribution(Check):
 
         from gl_dq.core.results import parse_segment
         from gl_dq.ui.components import status_table
-        from gl_dq.ui.theme import MAX_SERIES, line, series_encoding, style
+        from gl_dq.ui.theme import MAX_SERIES, line, ordered_categories, series_encoding, style
 
-        stats = tables["stats"].sort_values("segment")
+        stats = tables["stats"].sort_values("segment", key=_seg_or_num)
         keep = None if chosen is None or len(chosen) == len(stats) else set(chosen)
         status_table(stats, percent_cols=["pct_zero", "pct_negative"],
                      number_formats={c: "%.2f" for c in ["min", "mean", "p50", "p99", "max", "std", "max_to_p99"]})
@@ -454,8 +474,9 @@ class Distribution(Check):
                 n_panels = hist[enc["facet_col"]].nunique() if "facet_col" in enc else 1
                 # step lines stay readable with several overlaid segments (overlaid bars do not)
                 fig = line(hist, x="center", y="share", line_shape="hvh",
-                              hover_data={"range": True, "n": ":,", "center": False, "share": ":.2%", "segment": True},
-                              labels={"center": axis, "share": "share of segment"}, log_y=spec.log_scale.y, **enc)
+                           hover_data={"range": True, "n": ":,", "center": False, "share": ":.2%", "segment": True},
+                           labels={"center": axis, "share": "share of segment"}, log_y=spec.log_scale.y,
+                           category_orders=ordered_categories(hist, enc), **enc)
                 fig.update_traces(line=dict(width=1.5))
                 style(fig, height=380 if n_panels == 1 else 260 * ((n_panels + 2) // 3),
                       title=f"{spec.name}: share of segment by value (hover shows the original range)")
@@ -470,13 +491,14 @@ class Distribution(Check):
         with tab_p:
             pct = tables["percentiles"]
             wide = pct.pivot(index="percentile", columns="segment", values="value")
+            wide = wide[sort_segments(wide.columns)]
             if keep is not None:
                 pct = pct[pct["segment"].isin(keep)]
             pct = pct.join(pd.DataFrame([parse_segment(s) for s in pct["segment"]], index=pct.index))
             enc = series_encoding(pct, "segment", self.project.sources, spec.group_by)
             n_panels = pct[enc["facet_col"]].nunique() if "facet_col" in enc else 1
             fig = line(pct, x="percentile", y="value", markers=True, log_y=spec.log_scale.method != "none",
-                          hover_data={"segment": True}, **enc)
+                       hover_data={"segment": True}, category_orders=ordered_categories(pct, enc), **enc)
             fig.update_xaxes(tickformat=".0%")
             style(fig, height=360 if n_panels == 1 else 240 * ((n_panels + 2) // 3))
             st.plotly_chart(fig, use_container_width=True)
@@ -489,7 +511,7 @@ class Distribution(Check):
         import streamlit as st
 
         from gl_dq.ui.components import status_table
-        from gl_dq.ui.theme import SEQ_SCALE, series_encoding, style
+        from gl_dq.ui.theme import SEQ_SCALE, ordered_categories, series_encoding, style
 
         if not tables:
             st.info("No data.")
@@ -498,13 +520,16 @@ class Distribution(Check):
         top = tables["top"]
         n_seg, n_cat = top["segment"].nunique(), top["category"].nunique()
         if n_seg <= 4:
+            enc = series_encoding(top, "segment", self.project.sources)
             fig = px.bar(top, x="share", y="category", barmode="group", orientation="h",
-                         hover_data={"n": ":,", "share": ":.2%"}, **series_encoding(top, "segment", self.project.sources))
+                         hover_data={"n": ":,", "share": ":.2%"},
+                         category_orders=ordered_categories(top, enc), **enc)
             fig.update_xaxes(tickformat=".0%")
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
             style(fig, height=max(320, 22 * n_cat * max(1, n_seg // 2) + 60))
         else:  # many segments: share heatmap (category x segment) reads better than dozens of bars
             heat = top.pivot_table(index="category", columns="segment", values="share", aggfunc="sum").fillna(0)
+            heat = heat[sort_segments(heat.columns)]
             heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index]
             fig = px.imshow(heat, text_auto=".1%" if heat.shape[1] <= 12 else False, aspect="auto",
                             color_continuous_scale=SEQ_SCALE, zmin=0, labels={"color": "share"})

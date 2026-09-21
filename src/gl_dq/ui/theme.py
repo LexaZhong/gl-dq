@@ -40,9 +40,11 @@ def entity_colors(values, known: list[str] | None = None) -> dict:
 
     Segment labels like "src=BOP" match the known entity "BOP".
     """
+    from gl_dq.core.results import segment_sort_key
+
     known = list(known or [])
     out, extra = {}, len(known)
-    for v in sorted(map(str, set(values))):
+    for v in sorted(set(map(str, values)), key=segment_sort_key):
         key = v.split("=", 1)[-1] if "|" not in v else v
         if key in known:
             out[v] = CATEGORICAL[known.index(key) % len(CATEGORICAL)]
@@ -73,6 +75,18 @@ def series_encoding(df, col: str, known: list[str] | None = None, facet_candidat
                 return dict(facet_col=f, facet_col_wrap=3, color=color,
                             color_discrete_map=entity_colors(df[color].astype(str), known))
     return dict(facet_col=col, facet_col_wrap=4)
+
+
+def ordered_categories(df, enc: dict, *extra: str) -> dict:
+    """`category_orders` for the columns an encoding uses, in natural order.
+
+    Sorting the dataframe is not enough: plotly express orders discrete colours and facets by
+    first appearance, and `series_encoding` casts those columns to strings.
+    """
+    from gl_dq.core.results import sort_segments
+
+    cols = [enc.get("color"), enc.get("facet_col"), *extra]
+    return {c: sort_segments(df[c]) for c in cols if c and c in df}
 
 
 def limit_series(df, col: str, max_series: int = MAX_SERIES, weight: str | None = None):
