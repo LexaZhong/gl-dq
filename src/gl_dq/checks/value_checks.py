@@ -236,7 +236,13 @@ class ValueChecks(Check):
             if not cats:
                 st.info("No categorical columns configured.")
             else:
-                col = st.selectbox("Column", cats, key="vc_col")
+                # lead with the columns that actually differ across sources
+                unique_by_col = (f[f["metric"] == "source_unique_values"].groupby("variable")["value"].sum()
+                                 if not f.empty else pd.Series(dtype=float))
+                cats = sorted(cats, key=lambda c: -float(unique_by_col.get(c, 0)))
+                col = st.selectbox("Column", cats, key="vc_col",
+                                   format_func=lambda c: f"{c}  ⚠ {int(unique_by_col.get(c, 0))}"
+                                   if unique_by_col.get(c, 0) else c)
                 wide = result.tables.get(f"values::{col}")
                 if wide is None or wide.empty:
                     st.info("No values found.")

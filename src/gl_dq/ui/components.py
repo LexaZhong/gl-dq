@@ -24,6 +24,8 @@ def status_table(df: pd.DataFrame, percent_cols=(), number_formats: dict | None 
         view["status"] = view["status"].map(status_label)
         view = view[["status"] + [c for c in view.columns if c != "status"]]
     cfg = {c: st.column_config.NumberColumn(format="percent") for c in percent_cols if c in view}
+    if "segment" in view:  # segment labels are long ("src=BMQ|pol_yr=2019"): give them room
+        cfg["segment"] = st.column_config.TextColumn(width="medium")
     for c, fmt in (number_formats or {}).items():
         if c in view:
             cfg[c] = st.column_config.NumberColumn(format=fmt.replace("%,", "%"))

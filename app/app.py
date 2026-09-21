@@ -68,4 +68,5 @@ for section, names in ctx.checks_by_category().items():
         st.Page(_page_fn(n), title=ctx.checks[n].title, icon=ctx.checks[n].icon, url_path=n, default=start == n)
         for n in names
     ]
-st.navigation(pages).run()
+# expanded: with several sections Streamlit would otherwise collapse them behind "View N more"
+st.navigation(pages, expanded=True).run()
