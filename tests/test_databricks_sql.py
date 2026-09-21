@@ -54,6 +54,14 @@ def test_databricks_sql_has_no_duckdb_syntax(dbx_ctx):
             for spec in chk.cfg.variables:
                 if chk.kind(spec) == "numeric":
                     chk.histogram(spec)
+        if name == "segment_mix":  # the deep dive is render-only, so run() does not reach its SQL
+            from gl_dq.checks._segment_detail import segment_where
+
+            where = segment_where(chk.schema, chk.ctx.dialect, {dbx_ctx.project.src_col: "BOP"})
+            chk.detail_stats(where=where, base="SALES", per=1000.0)
+            chk.detail_hist(where=where, base="SALES", per=1000.0, metrics=("premium", "severity"),
+                            log_method="log10", bins=10)
+            chk.detail_trend(where=where, base="SALES", per=1000.0)
     assert dbx_ctx.db.sql
     for sql in dbx_ctx.db.sql:
         body = re.sub(r"--[^\n]*", "", sql)  # ignore SQL comments (the SOT files document examples there)

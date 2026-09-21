@@ -93,6 +93,8 @@ class Check:
         """Streamlit rendering of the result (default: tables)."""
         import streamlit as st
 
+        from gl_dq.core.results import split_segment_columns
+
         for label, df in result.tables.items():
             st.subheader(label)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(split_segment_columns(df), use_container_width=True, hide_index=True)

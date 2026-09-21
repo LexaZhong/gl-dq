@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from gl_dq.core.knowledge import ConflictError, Note, PreprocessingStep
-from gl_dq.core.results import STATUS_ICON, STATUS_RANK, worst
+from gl_dq.core.results import STATUS_ICON, STATUS_RANK, split_segment_columns, worst
 from gl_dq.core.workflow import parse_mapping
 from gl_dq.tracker import is_reopened, snapshots_for
 from gl_dq.ui import state
@@ -15,17 +15,16 @@ def status_label(s) -> str:
     return f"{STATUS_ICON.get(s, '⚪')} {s}" if isinstance(s, str) else "⚪"
 
 
-def status_table(df: pd.DataFrame, percent_cols=(), number_formats: dict | None = None, height="auto", key=None):
+def status_table(df: pd.DataFrame, percent_cols=(), number_formats: dict | None = None, height="auto", key=None,
+                 split_segment: bool = True):
     if df is None or df.empty:
         st.caption("No rows.")
         return
-    view = df.copy()
+    view = split_segment_columns(df) if split_segment else df.copy()
     if "status" in view:
         view["status"] = view["status"].map(status_label)
         view = view[["status"] + [c for c in view.columns if c != "status"]]
     cfg = {c: st.column_config.NumberColumn(format="percent") for c in percent_cols if c in view}
-    if "segment" in view:  # segment labels are long ("src=BMQ|pol_yr=2019"): give them room
-        cfg["segment"] = st.column_config.TextColumn(width="medium")
     for c, fmt in (number_formats or {}).items():
         if c in view:
             cfg[c] = st.column_config.NumberColumn(format=fmt.replace("%,", "%"))

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
-from gl_dq.checks._recon import pipeline_agg  # noqa: F401  (kept for parity with the other modules)
+from gl_dq.checks import _segment_detail as _detail
 from gl_dq.checks.base import Check, CheckResult
 from gl_dq.core.config import CheckConfig
 from gl_dq.core.registry import register_check
@@ -112,6 +112,18 @@ class SegmentMix(Check):
                  or "every material segment reaches the credibility target"),
         ]
 
+    # ---- deep dive (UI only; thin wrappers so ui.state can cache them per check) --------
+    def detail_stats(self, where: str, base: str | None, per: float) -> pd.DataFrame:
+        return _detail.policy_stats(self, where, base, per)
+
+    def detail_hist(self, where: str, base: str | None, per: float, metrics: tuple[str, ...],
+                    log_method: str, bins: int) -> pd.DataFrame:
+        # `log_method`, not `method`: ui.state.cached_method takes the method name as `method`
+        return _detail.policy_hist(self, where, base, per, metrics, log_method, bins)
+
+    def detail_trend(self, where: str, base: str | None, per: float) -> pd.DataFrame:
+        return _detail.policy_trend(self, where, base, per)
+
     def run(self) -> CheckResult:
         findings, tables = [], {}
         for dim in self.cfg.dimensions:
@@ -148,24 +160,36 @@ class SegmentMix(Check):
         return new
 
     def render(self, result: CheckResult):
-        import plotly.express as px
         import streamlit as st
-
-        from gl_dq.ui import state
-        from gl_dq.ui.components import status_table
-        from gl_dq.ui.theme import CATEGORICAL, STATUS, style
 
         cfg = self.cfg
         if not cfg.dimensions:
             st.info("No rating dimensions configured. Add them under ⚙️ Settings.")
             return
-        c1, c2, c3 = st.columns([2, 2, 1])
-        dim = c1.selectbox("Rating dimension", cfg.dimensions,
-                           index=cfg.dimensions.index(cfg.default_dimension) if cfg.default_dimension in cfg.dimensions else 0,
-                           key="sm_dim")
-        cross = c2.selectbox("Cross with (optional)", ["(none)"] + [d for d in cfg.dimensions if d != dim],
-                             key="sm_cross")
-        split = c3.toggle("By source", cfg.split_by_source, key="sm_by_src")
+        tab_mix, tab_detail = st.tabs(["Mix & credibility", "🔬 Segment deep dive"])
+        with tab_mix:
+            df, dims, t = self._render_mix(st, result, cfg)
+        with tab_detail:
+            _detail.render_detail(self, st, df, dims, t)
+
+    def _render_mix(self, st, result, cfg):
+        """The Pareto tab. Returns (profile frame, dimensions, thresholds) for the deep-dive tab."""
+        import plotly.express as px
+
+        from gl_dq.ui import state
+        from gl_dq.ui.components import status_table
+        from gl_dq.ui.theme import CATEGORICAL, STATUS, style
+
+        # one control for slicing: any number of dimensions, source included
+        opts = list(dict.fromkeys([d for d in cfg.dimensions if self.schema.has(d)]
+                                  + [c for c in self.segment_options() if c not in cfg.dimensions]))
+        default = [cfg.default_dimension if cfg.default_dimension in opts else opts[0]] if opts else []
+        dims = st.multiselect("Slice by", opts, default=default, max_selections=3, key="sm_dims_pick",
+                              help="Combine up to three dimensions. Every extra dimension multiplies the number of "
+                                   "cells, and thins the claims in each one.")
+        if not dims:
+            st.info("Pick at least one dimension to slice by.")
+            return pd.DataFrame(), [], cfg.thresholds
         s1, s2, s3 = st.columns(3)
         t = cfg.thresholds.model_copy(update={
             "large_share": s1.slider("Large: premium share >", 0.0, 0.5, cfg.thresholds.large_share, 0.005),
@@ -173,11 +197,10 @@ class SegmentMix(Check):
                                         format="%.3f"),
             "z_target": s3.slider("Credibility target Z", 0.0, 1.0, cfg.thresholds.z_target, 0.05)})
 
-        dims = ([self.project.src_col] if split else []) + [dim] + ([cross] if cross != "(none)" else [])
         df = state.cached_method(self.name, cfg, "profile", dims=tuple(dims), thresholds=t)
         if df.empty:
             st.info("No rows.")
-            return
+            return df, dims, t
 
         thin = df[df["flag"] == "thin"]
         large = df[df["flag"] == "large"]
@@ -193,33 +216,43 @@ class SegmentMix(Check):
 
         top = df.head(cfg.top_n).copy()
         top["band"] = np.where(top["z_claims"] >= t.z_target, f"Z ≥ {t.z_target:.2f}", f"Z < {t.z_target:.2f}")
-        fig = px.bar(top, x="segment", y="premium_share", color="band",
+        # the dimensions are named by the picker and the axis title, so the ticks carry values only
+        top["label"] = [_detail._short(s) for s in top["segment"]]
+        fig = px.bar(top, x="label", y="premium_share", color="band",
                      color_discrete_map={f"Z ≥ {t.z_target:.2f}": CATEGORICAL[0], f"Z < {t.z_target:.2f}": STATUS["warn"]},
                      hover_data={"premium": ":,.0f", "records": ":,", "claims": ":,", "z_claims": ":.2f",
                                  "cum_premium_share": ":.1%"},
-                     labels={"premium_share": "share of premium", "segment": ""})
+                     labels={"premium_share": "share of premium", "label": " × ".join(dims)})
         fig.update_yaxes(tickformat=".0%")
-        fig.update_xaxes(tickangle=-40)
-        st.plotly_chart(style(fig, 380, f"Top {len(top)} segments by premium ({' × '.join(dims)})"),
-                        use_container_width=True)
+        fig.update_xaxes(tickangle=-40, type="category")
+        sel = st.plotly_chart(style(fig, 380, f"Top {len(top)} segments by premium ({' × '.join(dims)})"),
+                              use_container_width=True, on_select="rerun", key="sm_pareto")
+        to_segment = dict(zip(top["label"], top["segment"]))
+        picked = [to_segment.get(str(p.get("x"))) for p in (sel or {}).get("selection", {}).get("points", [])]
+        if any(picked):
+            st.session_state["sm_focus"] = str(next(p for p in picked if p))
 
+        st.caption("Click a bar, or select a row below, to open that segment in the 🔬 deep-dive tab.")
         if len(thin):
             st.markdown(f"**Thin but material** — premium share ≥ {t.material_share:.1%} with Z < {t.z_target:.2f}")
-            _table(st, thin.sort_values("premium", ascending=False), key="sm_thin")
+            _table(st, thin.sort_values("premium", ascending=False), dims, key="sm_thin")
         else:
             st.success("Every material segment reaches the credibility target.")
         st.markdown("**All segments**")
-        _table(st, df, key="sm_all")
-        st.download_button("⬇️ CSV", df.to_csv(index=False),
+        _table(st, df, dims, key="sm_all")
+        st.download_button("⬇️ CSV", df.drop(columns=["segment"]).to_csv(index=False),
                            file_name=f"segment_mix_{'_'.join(dims)}.csv", mime="text/csv", key="sm_dl")
-        status_table(result.findings[result.findings["variable"] == dim][
+        status_table(result.findings[result.findings["variable"] == dims[0]][
             ["item", "segment", "metric", "value", "status", "detail"]], key="sm_find")
+        return df, dims, t
 
 
-def _table(st, df: pd.DataFrame, key: str):
-    cols = [c for c in ["segment", "premium", "premium_share", "cum_premium_share", "records", "records_share",
-                        "claims", "claims_share", "z_claims", "z_records", "flag"] if c in df]
-    st.dataframe(df[cols], hide_index=True, use_container_width=True, key=key, column_config={
+def _table(st, df: pd.DataFrame, dims: list[str], key: str):
+    """The segment table, one column per rating dimension. Selecting a row focuses the deep dive."""
+    cols = [c for c in list(dims) + ["premium", "premium_share", "cum_premium_share", "records", "records_share",
+                                     "claims", "claims_share", "z_claims", "z_records", "flag"] if c in df]
+    sel = st.dataframe(df[cols], hide_index=True, use_container_width=True, key=key,
+                       on_select="rerun", selection_mode="single-row", column_config={
         "premium": st.column_config.NumberColumn(format="localized"),
         "records": st.column_config.NumberColumn(format="localized"),
         "claims": st.column_config.NumberColumn(format="localized"),
@@ -229,3 +262,6 @@ def _table(st, df: pd.DataFrame, key: str):
         "cum_premium_share": st.column_config.NumberColumn(format="percent"),
         "z_claims": st.column_config.ProgressColumn("Z (claims)", min_value=0.0, max_value=1.0, format="%.2f"),
         "z_records": st.column_config.NumberColumn("Z (records)", format="%.2f")})
+    rows = (sel or {}).get("selection", {}).get("rows", [])
+    if rows:
+        st.session_state["sm_focus"] = str(df.iloc[rows[0]]["segment"])

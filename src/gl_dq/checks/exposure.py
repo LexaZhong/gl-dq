@@ -91,8 +91,7 @@ class Exposure(Check):
         by = self.cfg.summary_by
         st.markdown(f"**Exposure by `{base}`**: exposures are only comparable within a base.")
         bases = sorted(summ[base].dropna().astype(str).unique())
-        sel = st.segmented_control("Exposure base", bases, default=bases[0] if bases else None, key="ex_base") \
-            if hasattr(st, "segmented_control") else st.radio("Exposure base", bases, horizontal=True, key="ex_base")
+        sel = st.selectbox("Exposure base", bases, key="ex_base") if bases else None
         view = (summ[summ[base].astype(str) == str(sel)] if sel else summ).copy()
         if by:
             from gl_dq.ui.theme import line, series_encoding, style

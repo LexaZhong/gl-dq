@@ -1,0 +1,23 @@
+{# Policy-grain summary of each deep-dive metric, for the segment and for the rest of the book.
+
+   pcts_pos is the percentile grid over positive values only: a log histogram drops values <= 0,
+   so its bin bounds have to come from the positive part of the distribution. #}
+WITH
+{% include "_policy_grain.sql.j2" %}
+{% for metric in metrics %}
+SELECT
+  {{ lit(metric) }} AS metric,
+  {{ q('scope') }},
+  COUNT(*) AS n_policies,
+  COUNT({{ q(metric) }}) AS n_nonnull,
+  SUM(CASE WHEN {{ q(metric) }} > 0 THEN 1 ELSE 0 END) AS n_positive,
+  MIN({{ q(metric) }}) AS vmin,
+  MAX({{ q(metric) }}) AS vmax,
+  AVG({{ q(metric) }}) AS vmean,
+  SUM({{ q(metric) }}) AS vsum,
+  {{ dialect.percentiles(q(metric), probs) }} AS pcts,
+  {{ dialect.percentiles("CASE WHEN " ~ q(metric) ~ " > 0 THEN " ~ q(metric) ~ " END", probs) }} AS pcts_pos
+FROM m
+GROUP BY 1, 2
+{{ "UNION ALL" if not loop.last }}
+{% endfor %}

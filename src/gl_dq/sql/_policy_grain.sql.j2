@@ -1,0 +1,28 @@
+{# CTE fragment: one row per policy term x scope, with the deep-dive metrics.
+
+   Included (not rendered on its own) by segment_policy_stats/hist. Requires in context:
+   keys (policy key), scope_expr, premium, loss, claims, expo, base_pred, per, where.
+
+   A policy can have rows inside and outside the segment (several classes on one policy), so
+   scope is part of the grain rather than a property of the policy. #}
+p AS (
+  SELECT
+    {% for k in keys %}{{ sel(k) }}, {% endfor %}
+    {{ scope_expr }} AS {{ q('scope') }},
+    SUM({{ premium }}) AS {{ q('premium') }},
+    SUM({{ loss }}) AS {{ q('loss') }},
+    SUM({{ claims }}) AS {{ q('claims') }},
+    SUM(CASE WHEN {{ base_pred }} THEN {{ expo }} END) AS {{ q('exposure') }}
+  FROM {{ table }}
+  {% if where %}WHERE {{ where }}{% endif %}
+  GROUP BY {% for k in keys %}{{ loop.index }}, {% endfor %}{{ keys | length + 1 }}
+),
+m AS (
+  SELECT
+    {{ q('scope') }}, {{ q('premium') }}, {{ q('loss') }}, {{ q('claims') }}, {{ q('exposure') }},
+    CASE WHEN {{ q('premium') }} > 0 THEN {{ q('loss') }} / {{ q('premium') }} END AS {{ q('loss_ratio') }},
+    CASE WHEN {{ q('claims') }} > 0 THEN {{ q('loss') }} / {{ q('claims') }} END AS {{ q('severity') }},
+    CASE WHEN {{ q('exposure') }} > 0 THEN {{ q('claims') }} / {{ q('exposure') }} * {{ lit(per) }} END
+      AS {{ q('frequency') }}
+  FROM p
+)

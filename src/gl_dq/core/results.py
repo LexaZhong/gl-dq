@@ -72,6 +72,33 @@ def sort_segments(segments) -> list[str]:
     return sorted(dict.fromkeys(str(s) for s in segments), key=segment_sort_key)
 
 
+def split_segment_columns(df: pd.DataFrame, segment_col: str = "segment", max_dims: int = 8,
+                          keep_label: bool = False) -> pd.DataFrame:
+    """Replace a combined 'src=BMQ|pol_yr=2019' label with one column per dimension.
+
+    One cell per level reads far better in a grid (and can be sorted and filtered). Returns the
+    frame unchanged when there is nothing to split: no label column, every row ungrouped, or more
+    dimensions than `max_dims` (a findings table mixes levels and would explode sideways).
+    """
+    if df is None or df.empty or segment_col not in df.columns:
+        return df
+    labels = df[segment_col].astype(str)
+    parsed = [parse_segment(s) for s in labels]
+    dims: list[str] = list(dict.fromkeys(k for p in parsed for k in p))
+    if not dims or len(dims) > max_dims:
+        return df
+    out = df.copy()
+    at = list(out.columns).index(segment_col)
+    for d in reversed(dims):
+        if d in out.columns:  # already a real column (reconciliation tables): don't duplicate it
+            continue
+        # a row grouped at a coarser level simply has no value for this dimension
+        out.insert(at, d, [("(all)" if lbl == "ALL" else p.get(d, "")) for p, lbl in zip(parsed, labels)])
+    if not keep_label:
+        out = out.drop(columns=[segment_col])
+    return out
+
+
 def grade(value: float | None, warn: float | None, fail: float | None, higher_is_worse: bool = True) -> str:
     """Status for a metric against thresholds (strictly beyond threshold = flagged)."""
     if value is None or (isinstance(value, float) and np.isnan(value)):

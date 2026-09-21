@@ -18,7 +18,9 @@ stored as YAML, so the knowledge carries over to other projects.
 | 💰 Premium reconciliation | `tot_wrtn_prm_amt` vs the pricing-study source of truth by src × coverage (grain is configurable) |
 | 📉 Loss summary | `allocation` and claim count by loss year vs source of truth; severity, frequency (per exposure base) and loss ratio by segment |
 | 📐 Exposure summary | `expo_amt` by `expn_bs`, premium per exposure, negative or zero exposure, classes on more than one base |
-| 🧩 Segment mix & credibility | *(Portfolio analysis)* premium, record and claim shares per ISO rating dimension with a Pareto, and credibility Z = min(1, √(n/1082)) on claims and records: which segments drive the book, which are too thin to price |
+| 🧩 Segment mix & credibility | *(Portfolio analysis)* **Mix & credibility**: premium, record and claim shares for any combination of up to three rating dimensions, with a Pareto and credibility Z = min(1, √(n/1082)) on claims and records — which segments drive the book, which are too thin to price. **🔬 Segment deep dive**: click a segment to see, at policy-term grain, its premium / exposure / severity / frequency distributions against the rest of the book (linear or log), its trend by policy year, how many more claims it needs to reach the credibility target, what is inside the cell, and whether one policy carries its loss |
+
+Segment levels are shown as one column per dimension in every table (`src=BMQ|pol_yr=2019` becomes a `src` column and a `pol_yr` column), so they sort and filter like any other column.
 
 Every check page has ⚙️ **Settings** (Apply for your session, or 💾 **Save to config** for everyone), the
 findings table, the SQL it ran, and a 📝 **Status & notes** panel for the selected variable.

@@ -1,0 +1,16 @@
+{# Policy-grain histogram counts, one block per metric. The bucket expressions and their validity
+   predicates are built in Python from the bounds returned by segment_policy_stats, out of numeric
+   literals only (see _segment_detail.bucket_specs). #}
+WITH
+{% include "_policy_grain.sql.j2" %}
+{% for b in buckets %}
+SELECT
+  {{ lit(b.metric) }} AS metric,
+  {{ q('scope') }},
+  {{ b.expr }} AS bucket,
+  COUNT(*) AS n
+FROM m
+WHERE {{ b.where }}
+GROUP BY 1, 2, 3
+{{ "UNION ALL" if not loop.last }}
+{% endfor %}

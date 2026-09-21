@@ -9,7 +9,7 @@ import streamlit as st
 
 from gl_dq.core.config import dump_yaml
 from gl_dq.core.knowledge import ConflictError, export_markdown, preprocessing_spec
-from gl_dq.core.results import STATUS_ICON, parse_segment
+from gl_dq.core.results import STATUS_ICON, parse_segment, split_segment_columns
 from gl_dq.summary import filter_clause
 from gl_dq.tracker import build_tracker, snapshots_for
 from gl_dq.ui import state
@@ -257,7 +257,8 @@ def tracker_page():
             st.markdown(f"**Since previous run:** 🆕 {len(new)} newly flagged · ✔️ {len(gone)} no longer flagged")
             if len(new):
                 with st.expander("Newly flagged"):
-                    st.dataframe(new.drop(columns="_merge"), hide_index=True, use_container_width=True)
+                    st.dataframe(split_segment_columns(new.drop(columns="_merge")), hide_index=True,
+                                 use_container_width=True)
 
     with t_grid:
         c1, c2, c3 = st.columns([2, 2, 2])

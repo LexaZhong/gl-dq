@@ -492,6 +492,13 @@ class Distribution(Check):
             pct = tables["percentiles"]
             wide = pct.pivot(index="percentile", columns="segment", values="value")
             wide = wide[sort_segments(wide.columns)]
+            if len(spec.group_by) > 1:  # one header row per level instead of "src=BOP|pol_yr=2019"
+                parts = [parse_segment(s) for s in wide.columns]
+                wide.columns = pd.MultiIndex.from_tuples(
+                    [tuple(p.get(g, "") for g in spec.group_by) for p in parts], names=spec.group_by)
+            elif spec.group_by:
+                wide.columns = [parse_segment(s).get(spec.group_by[0], s) for s in wide.columns]
+                wide.columns.name = spec.group_by[0]
             if keep is not None:
                 pct = pct[pct["segment"].isin(keep)]
             pct = pct.join(pd.DataFrame([parse_segment(s) for s in pct["segment"]], index=pct.index))
