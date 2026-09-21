@@ -4,11 +4,13 @@ from __future__ import annotations
 import getpass
 import importlib
 import os
+from dataclasses import replace
 
 import streamlit as st
 from pydantic import BaseModel
 
 from gl_dq.core.context import load_context
+from gl_dq.core.filters import FilterSet
 
 
 def profile() -> str:
@@ -21,7 +23,51 @@ def _context(profile_name: str):
 
 
 def get_context():
-    return _context(profile())
+    """The context this session works with: one shared connection, this session's global filters."""
+    return _with_filters(_context(profile()), session_filters_json())
+
+
+def _with_filters(ctx, filters_json: str):
+    """A view of the context with these filters.
+
+    A copy, never a mutation: `_context` is an `st.cache_resource`, shared across every session, so
+    setting `ctx.filters` on it would apply one user's filters to everyone. `replace` keeps the
+    same db connection, schema and stores.
+    """
+    if not filters_json:
+        return ctx
+    fs = FilterSet.model_validate_json(filters_json)
+    return ctx if fs == ctx.filters else replace(ctx, filters=fs)
+
+
+# ---- per-session global filters ------------------------------------------------------
+def saved_filters() -> FilterSet:
+    """The filters in config/filters.yaml (what the refresh job uses)."""
+    return _context(profile()).filters
+
+
+def session_filters() -> FilterSet:
+    key = "global_filters"
+    if key not in st.session_state:
+        # a deep copy: `saved_filters()` belongs to the cached Context, which every session shares
+        st.session_state[key] = saved_filters().model_copy(deep=True)
+    return st.session_state[key]
+
+
+def set_session_filters(fs: FilterSet) -> None:
+    st.session_state["global_filters"] = fs
+
+
+def reset_session_filters() -> None:
+    st.session_state.pop("global_filters", None)
+
+
+def session_filters_json() -> str:
+    """The cache key every filtered computation is keyed on."""
+    try:
+        return session_filters().model_dump_json()
+    except Exception:  # noqa: BLE001  (no session context, e.g. in tests)
+        return ""
 
 
 def current_user() -> str:
@@ -54,15 +100,17 @@ def reset_session_config(name: str) -> None:
 
 
 # ---- cached computations -------------------------------------------------------------
+# Every one of these takes `filters_json` as a key argument: the global filters change what the
+# query returns, so a result computed under one filter set must not be served under another.
 @st.cache_data(ttl=3600, show_spinner=False)
-def _run_check(profile_name: str, name: str, cfg_json: str):
-    ctx = _context(profile_name)
+def _run_check(profile_name: str, filters_json: str, name: str, cfg_json: str):
+    ctx = _with_filters(_context(profile_name), filters_json)
     cfg = ctx.checks[name].Config.model_validate_json(cfg_json)
     return ctx.make_check(name, cfg).run()
 
 
 def run_check(name: str, cfg):
-    return _run_check(profile(), name, cfg.model_dump_json())
+    return _run_check(profile(), session_filters_json(), name, cfg.model_dump_json())
 
 
 def _encode(value):
@@ -82,38 +130,53 @@ def _decode(value):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _cached_method(profile_name: str, name: str, cfg_json: str, method: str, kwargs: tuple):
-    ctx = _context(profile_name)
+def _cached_method(profile_name: str, filters_json: str, name: str, cfg_json: str, method: str, kwargs: tuple):
+    ctx = _with_filters(_context(profile_name), filters_json)
     cls = ctx.checks[name]
     return getattr(cls(ctx, cls.Config.model_validate_json(cfg_json)), method)(**{k: _decode(v) for k, v in kwargs})
 
 
 def cached_method(name: str, cfg, method: str, **kwargs):
     """Call a check method with Streamlit caching (kwargs: plain values or pydantic models)."""
-    return _cached_method(profile(), name, cfg.model_dump_json(), method,
+    return _cached_method(profile(), session_filters_json(), name, cfg.model_dump_json(), method,
                           tuple(sorted((k, _encode(v)) for k, v in kwargs.items())))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _summary(profile_name: str, dims: tuple, where: str | None):
+def _summary(profile_name: str, filters_json: str, dims: tuple, where: str | None):
     from gl_dq.summary import summarize
 
-    return summarize(_context(profile_name), list(dims), where)
+    return summarize(_with_filters(_context(profile_name), filters_json), list(dims), where)
 
 
-def summary(dims, where: str | None = None):
-    return _summary(profile(), tuple(dims), where)
+def summary(dims, where: str | None = None, filters_json: str | None = None):
+    """Portfolio summary. `filters_json=""` deliberately asks for the unfiltered population."""
+    return _summary(profile(), session_filters_json() if filters_json is None else filters_json,
+                    tuple(dims), where)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _distinct_values(profile_name: str, column: str):
+def _distinct_values(profile_name: str, filters_json: str, column: str):
     from gl_dq.summary import distinct_values
 
-    return distinct_values(_context(profile_name), column)
+    return distinct_values(_with_filters(_context(profile_name), filters_json), column)
 
 
 def distinct_values(column: str):
-    return _distinct_values(profile(), column)
+    return _distinct_values(profile(), session_filters_json(), column)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _filter_impact(profile_name: str, filters_json: str):
+    from gl_dq.summary import filter_impact
+
+    ctx = _context(profile_name)
+    return filter_impact(ctx, FilterSet.model_validate_json(filters_json) if filters_json else None)
+
+
+def filter_impact(fs: FilterSet | None = None):
+    """How much each active filter removes (measured against the unfiltered table)."""
+    return _filter_impact(profile(), (fs or session_filters()).model_dump_json())
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -136,3 +199,4 @@ def runs():
 
 def clear_data_caches() -> None:
     st.cache_data.clear()
+    st.cache_resource.clear()  # the Context caches config/filters.yaml, so re-read it too

@@ -15,8 +15,12 @@
 -- BOP: not covered yet (see the premium file).
 --
 -- Source: cimm_csm.loss_transx_seg_enriched_2026q2 (profile sql_vars -> sot_loss_table).
--- The policy filter uses POLHLDR_CONTR_ID and CONTR_EFF_DT, so those columns must exist in the
--- loss table too; if they are named differently there, adjust the WHERE clause below.
+-- The policy filter matches policy TERMS (POLHLDR_CONTR_ID + CONTR_EFF_DT against pol_num +
+-- pol_eff_dt), so those columns must exist in the loss table too; if they are named differently
+-- there, adjust the WHERE clause below.
+--
+-- {{ table }} is the pipeline table AFTER the global filters in config/filters.yaml, so a filter
+-- restricts both sides of the reconciliation; {{ raw_table }} is the unfiltered table.
 -- ============================================================================
 
 SELECT
@@ -30,8 +34,8 @@ WHERE LOB = 'GL'
   AND OCUR_ID IS NOT NULL
   AND CONTR_EFF_DT >= DATE '{{ study_from }}'
   AND CONTR_EFF_DT <= DATE '{{ study_to }}'
-  AND POLHLDR_CONTR_ID IN (
-        SELECT DISTINCT pol_num FROM {{ table }} WHERE src IN ('BMQ', 'CMQ')
+  AND (POLHLDR_CONTR_ID, CONTR_EFF_DT) IN (
+        SELECT DISTINCT pol_num, pol_eff_dt FROM {{ table }} WHERE src IN ('BMQ', 'CMQ')
       )
 GROUP BY 1, 2
 

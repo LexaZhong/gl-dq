@@ -9,10 +9,14 @@
 -- BMQ and CMQ (check_overrides.premium_recon.where). Once a BOP source exists,
 -- UNION it in below and drop 'BOP' from that filter.
 --
--- Note: the POLHLDR_CONTR_ID filter restricts the study to policies that are already
--- in gl_master, so this reconciles AMOUNTS, not completeness. Policies that exist in
+-- Note: the policy filter restricts the study to policy TERMS (pol_num + pol_eff_dt) that are
+-- already in gl_master, so this reconciles AMOUNTS, not completeness. Policies that exist in
 -- the study but are missing from gl_master will not show up here - see the
 -- "policies in the study but not in gl_master" query at the bottom.
+--
+-- {{ table }} is the pipeline table AFTER the global filters in config/filters.yaml, so turning a
+-- filter on restricts both sides of the reconciliation and the variance stays like-for-like.
+-- Use {{ raw_table }} instead to compare against the unfiltered table on purpose.
 -- ============================================================================
 
 SELECT
@@ -23,8 +27,8 @@ FROM {{ sot_premium_table }}
 WHERE LOB = 'GL'
   AND CONTR_EFF_DT >= DATE '{{ study_from }}'
   AND CONTR_EFF_DT <= DATE '{{ study_to }}'
-  AND POLHLDR_CONTR_ID IN (
-        SELECT DISTINCT pol_num FROM {{ table }} WHERE src IN ('BMQ', 'CMQ')
+  AND (POLHLDR_CONTR_ID, CONTR_EFF_DT) IN (
+        SELECT DISTINCT pol_num, pol_eff_dt FROM {{ table }} WHERE src IN ('BMQ', 'CMQ')
       )
 GROUP BY 1, 2
 
@@ -37,6 +41,6 @@ GROUP BY 1, 2
 --   FROM {{ sot_premium_table }}
 --   WHERE LOB = 'GL'
 --     AND CONTR_EFF_DT BETWEEN DATE '{{ study_from }}' AND DATE '{{ study_to }}'
---     AND POLHLDR_CONTR_ID NOT IN (SELECT DISTINCT pol_num FROM {{ table }})
+--     AND (POLHLDR_CONTR_ID, CONTR_EFF_DT) NOT IN (SELECT DISTINCT pol_num, pol_eff_dt FROM {{ table }})
 --   GROUP BY 1, 2 ORDER BY premium_missing DESC
 -- ---------------------------------------------------------------------------

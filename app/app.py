@@ -39,6 +39,13 @@ except Exception as e:  # noqa: BLE001
 with st.sidebar:
     st.markdown(f"### 🧹 {ctx.project.name}")
     st.caption(f"Signed in as {state.current_user()}")
+    # global filters change every number on every page, so no page may show them silently
+    active = ctx.filters.active(ctx.profile)
+    if active:
+        with st.expander(f"🔎 {len(active)} global filter(s) active", expanded=False):
+            for f in active:
+                st.caption(f"**{f.title}** · `{f.summary()}`")
+            st.caption("Edit them on 📋 Portfolio summary.")
 
 
 def _page_fn(name):

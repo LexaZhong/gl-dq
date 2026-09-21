@@ -1,0 +1,61 @@
+# Global data filters: applied to EVERY query the dashboard and the refresh job run.
+#
+# Edit them here, or on the Portfolio summary page (🔎 Global filters), which also shows how much
+# data each one removes and can save back to this file.
+#
+# A rule keeps the rows its predicate is TRUE for - a null value is excluded unless the rule says
+# otherwise. Everything ships disabled: turning one on is a deliberate act, because it changes
+# every number on every page.
+#
+#   key         stable id; it is stored with each refresh run so findings can be traced back
+#   label       what it is called in the UI
+#   description why it exists - this is the part your colleagues actually need
+#   enabled     false = defined but not applied
+#   profiles    empty = every profile, or e.g. [prod] to scope it
+#   column/op/values   structured rule (safe by construction; op: in, not_in, is_null, not_null,
+#                      eq, ne, gt, gte, lt, lte; use "<null>" as a value to mean NULL)
+#   expr        raw SQL predicate for rules no picker can express; {{ raw_table }} is the
+#               unfiltered table, which a self-referencing rule must use
+filters:
+  - key: exclude_zero_exposure
+    label: Exclude zero exposure
+    description: >
+      Rows with no exposure cannot be rated, and they distort every per-exposure metric
+      (frequency, premium per exposure unit).
+    enabled: false
+    column: expo_amt
+    op: gt
+    values: ["0"]
+
+  - key: us_states_only
+    label: US states only
+    description: Territories and rows with no state are priced separately and are out of scope here.
+    enabled: false
+    column: loc_st_abbr
+    op: not_in
+    values: ["PR", "VI", "GU", "AS", "MP", "<null>"]
+
+  - key: exclude_cancellations
+    label: Exclude cancellation transactions
+    description: Keep written premium as booked at inception; cancellations are handled downstream.
+    enabled: false
+    column: tx_type_nm
+    op: ne
+    values: ["Cancellation"]
+
+  # A rule the pickers cannot express: it asks a question about the whole table, not about the row.
+  - key: pco_without_pco_business
+    label: Drop ProductsCompletedOps rows for ids that write no PCO business
+    description: >
+      A gl_bop_id that writes no products/completed-ops premium should not carry a
+      ProductsCompletedOps coverage row - those are mapping artefacts, not exposure.
+      Rename gl_bop_id below if your table spells it differently.
+    enabled: false
+    profiles: [prod, workspace, parquet]
+    expr: |
+      NOT (covg_type_desc = 'ProductsCompletedOps'
+           AND gl_bop_id NOT IN (SELECT gl_bop_id
+                                 FROM {{ raw_table }}
+                                 WHERE covg_type_desc = 'ProductsCompletedOps'
+                                   AND COALESCE(tot_wrtn_prm_amt, 0) > 0
+                                   AND gl_bop_id IS NOT NULL))

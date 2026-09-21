@@ -255,7 +255,7 @@ class Distribution(Check):
         counts["range"] = [f"{a:,.2f} to {b:,.2f}" for a, b in zip(inverse_transform(counts["left"], spec.log_scale.method),
                                                                    inverse_transform(counts["right"], spec.log_scale.method))]
         counts["share"] = counts["n"] / counts.groupby("segment")["n"].transform("sum")
-        total = self.query(f"{spec.name} excluded", f"SELECT COUNT(*) AS n FROM {self.project.table} "
+        total = self.query(f"{spec.name} excluded", f"SELECT COUNT(*) AS n FROM {self.ctx.table_expr} "
                                                      f"WHERE {x} IS NOT NULL AND NOT ({valid})").iloc[0]["n"]
         counts.attrs.update(excluded=int(total or 0), lo=lo, hi=hi, method=spec.log_scale.method)
         return counts.sort_values(["segment", "bucket"], key=_seg_or_num)

@@ -1,0 +1,15 @@
+{# What each global filter costs, in one pass over the UNFILTERED table.
+
+   Each rule is measured on its own, so rules that overlap do not add up to the combined total -
+   that is what removed_rows_all / removed_premium_all are for. A row is kept only when the
+   predicate is true, so NOT COALESCE(pred, FALSE) counts rows a NULL predicate drops. #}
+SELECT
+  COUNT(*) AS rows_total,
+  SUM({{ premium }}) AS premium_total,
+{% for f in filters %}
+  SUM(CASE WHEN NOT COALESCE(({{ f.predicate }}), FALSE) THEN 1 ELSE 0 END) AS {{ q("rows_" ~ f.alias) }},
+  SUM(CASE WHEN NOT COALESCE(({{ f.predicate }}), FALSE) THEN {{ premium }} ELSE 0 END) AS {{ q("premium_" ~ f.alias) }},
+{% endfor %}
+  SUM(CASE WHEN NOT ({{ combined }}) THEN 1 ELSE 0 END) AS rows_removed_all,
+  SUM(CASE WHEN NOT ({{ combined }}) THEN {{ premium }} ELSE 0 END) AS premium_removed_all
+FROM {{ raw_table }}

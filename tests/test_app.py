@@ -150,7 +150,8 @@ def test_summary_filters_narrow_the_page(refreshed, monkeypatch):
 
 def test_summary_filter_options_follow_the_dimensions(refreshed, monkeypatch):
     at = _open("summary", monkeypatch)
-    assert {"Filter src", "Filter covg_type_desc"} <= {m.label for m in at.multiselect}
+    page_filter = "Filter {} (this page only)".format
+    assert {page_filter("src"), page_filter("covg_type_desc")} <= {m.label for m in at.multiselect}
     at.multiselect(key="sum_dims").set_value(["loc_st_abbr"]).run()
     labels = {m.label for m in at.multiselect}
-    assert "Filter loc_st_abbr" in labels and "Filter covg_type_desc" not in labels
+    assert page_filter("loc_st_abbr") in labels and page_filter("covg_type_desc") not in labels

@@ -11,6 +11,7 @@ import yaml
 from gl_dq import PACKAGE_ROOT, REPO_ROOT
 from gl_dq.core.config import ProjectConfig, deep_merge, dump_yaml, load_project
 from gl_dq.core.db import Database, make_database
+from gl_dq.core.filters import FilterSet, load_filters, save_filters
 from gl_dq.core.knowledge import KnowledgeStore
 from gl_dq.core.registry import discover
 from gl_dq.core.results import DeltaResults, ParquetResults, ResultsStore
@@ -30,6 +31,7 @@ class Context:
     results: ResultsStore
     checks: dict[str, type] = field(default_factory=dict)
     workflow: Workflow = field(default_factory=Workflow)
+    filters: FilterSet = field(default_factory=FilterSet)
 
     def __post_init__(self):
         self._jinja = jinja2.Environment(
@@ -41,19 +43,36 @@ class Context:
     def dialect(self):
         return self.db.dialect
 
+    @property
+    def table_expr(self) -> str:
+        """The table every query reads: the real table, or a subquery with the global filters.
+
+        `project.table` stays the real name (DESCRIBE, error messages, the preprocessing spec);
+        this is what `{{ table }}` renders to. Every packaged template uses `FROM {{ table }}`
+        bare, with no alias and no alias-qualified columns, so a subquery drops straight in.
+        """
+        where = self.filters.where(self)
+        return self.project.table if not where else f"(SELECT * FROM {self.project.table} WHERE {where}) AS gl"
+
     def render_sql(self, template: str, **kw) -> str:
         """Render a packaged SQL template with column helpers available as c(), sel(), lit()."""
         s, d = self.schema, self.dialect
         return self._jinja.get_template(template).render(
-            table=self.project.table, c=s.ref, sel=s.select_as, q=d.quote, lit=d.lit, dialect=d, **kw)
+            table=self.table_expr, raw_table=self.project.table,
+            c=s.ref, sel=s.select_as, q=d.quote, lit=d.lit, dialect=d, **kw)
 
     def render_user_sql(self, path: str) -> str:
-        """Render a user-supplied SQL file from the config store (e.g. a source-of-truth query)."""
+        """Render a user-supplied SQL file from the config store (e.g. a source-of-truth query).
+
+        `{{ table }}` is the filtered population, so a source of truth restricted to the policies
+        in gl_master is restricted to the same policies the dashboard shows; `{{ raw_table }}` is
+        the unfiltered table for a query that deliberately wants everything.
+        """
         text = self.config_store.read_text(path)
         if text is None:
             raise FileNotFoundError(f"{path} not found in {self.config_store}")
         return jinja2.Template(text, undefined=jinja2.StrictUndefined).render(
-            table=self.project.table, **self.project.sql_vars)
+            table=self.table_expr, raw_table=self.project.table, **self.project.sql_vars)
 
     # ---- check configs -----------------------------------------------------
     def check_config(self, name: str):
@@ -62,6 +81,11 @@ class Context:
         raw = yaml.safe_load(text) if text else {}
         raw = deep_merge(raw or {}, self.project.check_overrides.get(name, {}))
         return cls.Config.model_validate(raw)
+
+    def save_filters(self, fs: FilterSet) -> None:
+        """Write config/filters.yaml, so every session and the refresh job see the same rules."""
+        save_filters(self.config_store, fs)
+        self.filters = fs
 
     def save_check_config(self, name: str, cfg) -> None:
         self.config_store.write_text(f"checks/{name}.yaml", dump_yaml(cfg.model_dump(mode="json")))
@@ -98,4 +122,5 @@ def load_context(profile: str | None = None) -> Context:
     else:
         results = ParquetResults(make_storage(project.results.path, REPO_ROOT))
     checks = discover(project.plugins)
-    return Context(profile, project, db, schema, config_store, knowledge, results, checks, load_workflow(config_store))
+    return Context(profile, project, db, schema, config_store, knowledge, results, checks,
+                   load_workflow(config_store), load_filters(config_store))

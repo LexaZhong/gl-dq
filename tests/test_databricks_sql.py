@@ -44,7 +44,7 @@ def dbx_ctx(ctx_injected):
     return ctx
 
 
-def test_databricks_sql_has_no_duckdb_syntax(dbx_ctx):
+def _sweep(dbx_ctx):
     for name in dbx_ctx.enabled_checks():
         chk = dbx_ctx.make_check(name)
         chk.run()
@@ -68,3 +68,21 @@ def test_databricks_sql_has_no_duckdb_syntax(dbx_ctx):
         body = re.sub(r"'[^']*'", "''", body)  # and string literals
         for pat in DUCKDB_ONLY:
             assert not re.search(pat, body), f"{pat} in:\n{sql}"
+
+
+def test_databricks_sql_has_no_duckdb_syntax(dbx_ctx):
+    _sweep(dbx_ctx)
+
+
+def test_databricks_sql_survives_a_global_filter(dbx_ctx):
+    """Every template reads `FROM {{ table }}`, which a global filter turns into a subquery."""
+    from dataclasses import replace
+
+    from gl_dq.core.filters import Filter, FilterSet
+
+    fs = FilterSet(filters=[Filter(key="bop_only", enabled=True, column="src", op="in", values=["BOP"]),
+                            Filter(key="no_zero_expo", enabled=True, column="expo_amt", op="gt", values=["0"])])
+    ctx = replace(dbx_ctx, filters=fs)
+    ctx.db.sql.clear()
+    _sweep(ctx)
+    assert any("AS gl" in sql for sql in ctx.db.sql), "the filtered subquery never reached the SQL"

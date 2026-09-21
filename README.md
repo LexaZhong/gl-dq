@@ -27,6 +27,43 @@ findings table, the SQL it ran, and a 📝 **Status & notes** panel for the sele
 
 Pages group into sidebar sections by each check's `category` — `Checks` (is the data right?) by default, `Portfolio analysis` for modules that describe the book rather than validate it. Moving a page between sections is a one-line config change.
 
+## Global filters (`config/filters.yaml`)
+Rules that restrict the population **every** page, check and refresh run sees — so an exclusion is
+written once and is visible to everyone, instead of being copied into nine per-check `where:` settings.
+
+Edit them at the top of 📋 **Portfolio summary** (🔎 Global filters): one checkbox per rule, and next to
+each one what it costs — `−18,599 rows (8.7%) · premium +86.6M (+3.4%)` — plus the combined total.
+Costs are measured for every rule, enabled or not, so you can see what a rule *would* remove before
+turning it on. Toggling applies to your session; 💾 **Save for everyone** writes the YAML the refresh
+job reads.
+
+```yaml
+filters:
+  - key: exclude_zero_exposure          # stored with every run, so findings can be traced back
+    label: Exclude zero exposure
+    description: Rows with no exposure cannot be rated and distort every per-exposure metric.
+    enabled: false                      # everything ships off: turning one on changes every number
+    column: expo_amt                    # structured rules are built through the column whitelist
+    op: gt                              # in, not_in, is_null, not_null, eq, ne, gt, gte, lt, lte
+    values: ["0"]
+  - key: pco_without_pco_business       # what no picker can express: raw SQL, reviewed like code
+    label: Drop ProductsCompletedOps rows for ids that write no PCO business
+    description: Mapping artefacts, not exposure.
+    enabled: false
+    profiles: [prod]                    # empty = every profile
+    expr: NOT (covg_type_desc = 'ProductsCompletedOps' AND gl_bop_id NOT IN (
+            SELECT gl_bop_id FROM {{ raw_table }} WHERE ...))
+```
+
+A rule **keeps** the rows its predicate is true for, so a null value is excluded unless the rule says
+otherwise. `{{ raw_table }}` is the unfiltered table — a rule that queries the table itself must use it.
+
+How it reaches every query: `ctx.table_expr` renders `{{ table }}` as
+`(SELECT * FROM gl_master WHERE <filters>) AS gl`, so no SQL template changes and nothing can forget to
+apply it. Source-of-truth queries are restricted to the surviving `pol_num` + `pol_eff_dt` pairs, keeping
+both sides of a reconciliation like-for-like. Each run stores the filters it used, and the tracker warns
+when the stored findings were computed under different ones than you have on now.
+
 ## Review workflow (`config/workflow.yaml`)
 Each column has one stage, a named assignee per role, and a timestamped status history:
 
@@ -72,6 +109,7 @@ each one is flagged and that the clean dataset flags nothing.
 ```
 config/profiles/<profile>.yaml   table, backend, measures, derived columns (pol_yr, loss_yr), storage locations
 config/checks/<check>.yaml       per-check settings (live copy in the UC Volume on Databricks)
+config/filters.yaml              global filters: one population for every page and the refresh job
 config/sql/sot_*.sql             source-of-truth queries  ← fill in the pricing-study SQL here
 src/gl_dq/core/                  config, db (DuckDB | Databricks SQL), schema whitelist, storage (local | Volume),
                                  knowledge store, results store, registry

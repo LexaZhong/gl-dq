@@ -25,12 +25,15 @@ def main(argv=None):
     p.add_argument("--schema", help="sets DQ_SCHEMA (prod profile)")
     p.add_argument("--warehouse-id", help="sets DATABRICKS_WAREHOUSE_ID (prod profile)")
     p.add_argument("--volume-dir", help="sets DQ_VOLUME_DIR (config, knowledge and run history)")
+    p.add_argument("--no-filters", action="store_true", help="ignore config/filters.yaml and run on every row")
     args = p.parse_args(argv)
     for env, val in [("DQ_CATALOG", args.catalog), ("DQ_SCHEMA", args.schema),
                      ("DATABRICKS_WAREHOUSE_ID", args.warehouse_id), ("DQ_VOLUME_DIR", args.volume_dir)]:
         if val:
             os.environ[env] = val
     ctx = load_context(args.profile)
+    if args.no_filters:
+        ctx.filters = ctx.filters.with_all_disabled()
     run_id, findings, errors = refresh(ctx, args.checks)
     if errors:
         print(f"{len(errors)} check(s) errored: {', '.join(errors)}", file=sys.stderr)

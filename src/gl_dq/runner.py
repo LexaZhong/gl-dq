@@ -29,9 +29,12 @@ def run_all(ctx, checks: list[str] | None = None, log=print) -> tuple[pd.DataFra
 
 def refresh(ctx, checks: list[str] | None = None, log=print) -> tuple[str, pd.DataFrame, dict]:
     run_id, run_ts = new_run_id()
-    log(f"refresh {run_id} · profile={ctx.profile} · table={ctx.project.table}")
+    active = ctx.filters.active(ctx.profile)
+    log(f"refresh {run_id} · profile={ctx.profile} · table={ctx.project.table}"
+        + (f" · filters: {', '.join(f.key for f in active)}" if active else " · filters: none"))
     findings, errors = run_all(ctx, checks, log)
-    ctx.results.append(findings, run_id, run_ts, ctx.profile)
+    # stored with the run, so the dashboard can say whether these findings match the filters you see
+    ctx.results.append(findings, run_id, run_ts, ctx.profile, ctx.filters.fingerprint(ctx))
     counts = findings["status"].value_counts().to_dict()
     log(f"stored {len(findings)} findings: {counts}")
     return run_id, findings, errors

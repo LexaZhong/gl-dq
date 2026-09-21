@@ -27,6 +27,12 @@ class KeyUniqueness(Check):
         suggest_max_cols: int = 8
         suggest_exclude_amounts: bool = True
 
+    @staticmethod
+    def _int(v) -> int:
+        """`v or 0` raises on pd.NA, which is what an aggregate over an empty source returns
+        (a global filter can empty one)."""
+        return 0 if v is None or pd.isna(v) else int(v)
+
     def _where(self, src: str) -> str | None:
         if src == ALL:
             return None
@@ -39,25 +45,25 @@ class KeyUniqueness(Check):
             seg = segment_key({} if src == ALL else {self.project.src_col: src})
             where = self._where(src)
             r = self.query(f"key {src}", self.ctx.render_sql("key_uniqueness.sql.j2", keys=keys, where=where)).iloc[0]
-            n = int(r["n_rows"] or 0)
-            dup_rate = (r["n_dup_rows"] or 0) / n if n else 0.0
-            nulls = {k: int(r[f"null__{k}"] or 0) for k in keys}
+            n = self._int(r["n_rows"])
+            dup_rate = self._int(r["n_dup_rows"]) / n if n else 0.0
+            nulls = {k: self._int(r[f"null__{k}"]) for k in keys}
             status = grade(dup_rate, self.cfg.warn_dup_rate, self.cfg.fail_dup_rate)
             summary.append({
                 "source": src, "status": status, "key": ", ".join(keys), "n_rows": n,
-                "n_distinct_keys": int(r["n_distinct_keys"] or 0), "n_dup_rows": int(r["n_dup_rows"] or 0),
-                "n_dup_groups": int(r["n_dup_groups"] or 0), "dup_rate": dup_rate,
-                "max_rows_per_key": int(r["max_rows_per_key"] or 0),
+                "n_distinct_keys": self._int(r["n_distinct_keys"]), "n_dup_rows": self._int(r["n_dup_rows"]),
+                "n_dup_groups": self._int(r["n_dup_groups"]), "dup_rate": dup_rate,
+                "max_rows_per_key": self._int(r["max_rows_per_key"]),
                 "key_cols_with_nulls": ", ".join(f"{k} ({v:,})" for k, v in nulls.items() if v) or "none",
             })
             rows.append(dict(variable="_key", item=", ".join(keys), segment=seg, metric="dup_rate", value=dup_rate,
                              threshold=self.cfg.fail_dup_rate, status=status,
-                             detail=f"{int(r['n_dup_rows'] or 0):,} duplicate rows in {int(r['n_dup_groups'] or 0):,} keys"))
+                             detail=f"{self._int(r['n_dup_rows']):,} duplicate rows in {self._int(r['n_dup_groups']):,} keys"))
             for k, v in nulls.items():
                 if v:
                     rows.append(dict(variable=k, item="key column", segment=seg, metric="key_null_rows", value=v,
                                      threshold=None, status="info", detail=f"null in key column for {v:,} rows"))
-            if r["n_dup_rows"]:
+            if self._int(r["n_dup_rows"]):
                 samples[src] = self.query(f"duplicates {src}", self.ctx.render_sql(
                     "key_duplicates.sql.j2", keys=keys, where=where, limit=self.cfg.sample_limit))
         if not self.cfg.candidate_keys:

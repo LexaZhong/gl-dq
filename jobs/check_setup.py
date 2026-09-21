@@ -64,6 +64,25 @@ def main(argv=None):
     n = ctx.db.query(f"SELECT COUNT(*) AS n FROM {ctx.project.table}").iloc[0]["n"]
     print(f"  ok    table readable: {int(n):,} rows, {len(ctx.schema.columns)} columns")
 
+    # global filters: they restrict every query below, so validate them before anything else runs
+    from gl_dq.core.filters import validate as validate_filter
+
+    active = ctx.filters.active(ctx.profile)
+    for f in active:
+        try:
+            validate_filter(ctx, f)
+        except Exception as e:  # noqa: BLE001
+            print(f"{BAD} filter {f.key}: {str(e)[:160]}")
+            problems.append(f"filter {f.key}: {str(e)[:160]}")
+            ctx.filters = ctx.filters.with_all_disabled()  # keep the rest of the preflight usable
+            break
+    if active and ctx.filters.active(ctx.profile):
+        kept = ctx.db.query(f"SELECT COUNT(*) AS n FROM {ctx.table_expr}").iloc[0]["n"]
+        print(f"  ok    global filters ({', '.join(f.key for f in active)}): "
+              f"{int(n):,} rows -> {int(kept):,} ({(int(n) - int(kept)) / int(n):.1%} removed)")
+    else:
+        print("  ok    global filters: none active")
+
     m = ctx.project.measures.model_dump()
     groups = {"measures": list(m.values()), "policy_key": ctx.project.policy_key,
               "segment_candidates": ctx.project.segment_candidates,
@@ -90,10 +109,12 @@ def main(argv=None):
         print(f"{BAD} derived columns failed: {e}")
         problems.append(f"derived columns: {e}")
 
+    # compared on the filtered population, which is what every check sees
     found = set(ctx.db.query(
-        f"SELECT DISTINCT {ctx.schema.ref(ctx.project.src_col)} AS s FROM {ctx.project.table}")["s"].dropna())
+        f"SELECT DISTINCT {ctx.schema.ref(ctx.project.src_col)} AS s FROM {ctx.table_expr}")["s"].dropna())
     expected = set(ctx.project.sources)
-    print((BAD if expected != found else OK) + f" sources: configured {sorted(expected)}, in data {sorted(found)}")
+    note = " (after global filters)" if ctx.filters.active(ctx.profile) else ""
+    print((BAD if expected != found else OK) + f" sources: configured {sorted(expected)}, in data{note} {sorted(found)}")
     if expected != found:
         problems.append(f"sources differ: only in config {sorted(expected - found)}, only in data {sorted(found - expected)}")
 

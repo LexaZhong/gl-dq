@@ -130,7 +130,9 @@ def new_run_id() -> tuple[str, str]:
 
 class ResultsStore(ABC):
     @abstractmethod
-    def append(self, findings: pd.DataFrame, run_id: str, run_ts: str, profile: str) -> None: ...
+    def append(self, findings: pd.DataFrame, run_id: str, run_ts: str, profile: str,
+               filters: str = "") -> None:
+        """Store one run. `filters` is the global-filter fingerprint it was computed under."""
 
     @abstractmethod
     def load(self) -> pd.DataFrame:
@@ -139,11 +141,14 @@ class ResultsStore(ABC):
     def runs(self) -> pd.DataFrame:
         df = self.load()
         if df.empty:
-            return pd.DataFrame(columns=["run_id", "run_ts", "n_findings", "n_warn", "n_fail"])
+            return pd.DataFrame(columns=["run_id", "run_ts", "n_findings", "n_warn", "n_fail", "filters"])
+        if "filters" not in df:
+            df = df.assign(filters="")
         return (df.groupby(["run_id", "run_ts"], as_index=False)
                   .agg(n_findings=("status", "size"),
                        n_warn=("status", lambda s: (s == "warn").sum()),
-                       n_fail=("status", lambda s: (s == "fail").sum()))
+                       n_fail=("status", lambda s: (s == "fail").sum()),
+                       filters=("filters", lambda s: next((x for x in s if x), "")))
                   .sort_values("run_ts"))
 
     def latest(self, offset: int = 0) -> pd.DataFrame:
@@ -166,8 +171,8 @@ class ParquetResults(ResultsStore):
     def __init__(self, storage, prefix: str = "runs"):
         self.storage, self.prefix = storage, prefix.strip("/")
 
-    def append(self, findings, run_id, run_ts, profile):
-        out = findings.assign(run_id=run_id, run_ts=run_ts, profile=profile)
+    def append(self, findings, run_id, run_ts, profile, filters=""):
+        out = findings.assign(run_id=run_id, run_ts=run_ts, profile=profile, filters=filters)
         buf = io.BytesIO()
         out.astype({"detail": "string", "item": "string"}).to_parquet(buf, index=False)
         self.storage.write_bytes(f"{self.prefix}/findings_{run_id}.parquet", buf.getvalue())
@@ -176,8 +181,9 @@ class ParquetResults(ResultsStore):
         files = sorted(self.storage.list(self.prefix, ".parquet"))
         frames = [pd.read_parquet(io.BytesIO(b)) for b in (self.storage.read_bytes(f) for f in files) if b]
         if not frames:
-            return pd.DataFrame(columns=FINDING_COLS + ["run_id", "run_ts", "profile"])
-        return pd.concat(frames, ignore_index=True)
+            return pd.DataFrame(columns=FINDING_COLS + ["run_id", "run_ts", "profile", "filters"])
+        out = pd.concat(frames, ignore_index=True)  # runs stored before `filters` existed have none
+        return out.assign(filters=out["filters"].fillna("")) if "filters" in out else out.assign(filters="")
 
 
 class DeltaResults(ResultsStore):
@@ -186,8 +192,8 @@ class DeltaResults(ResultsStore):
     def __init__(self, db, table: str):
         self.db, self.table = db, table
 
-    def append(self, findings, run_id, run_ts, profile):
-        out = findings.assign(run_id=run_id, run_ts=run_ts, profile=profile)
+    def append(self, findings, run_id, run_ts, profile, filters=""):
+        out = findings.assign(run_id=run_id, run_ts=run_ts, profile=profile, filters=filters)
         try:
             from pyspark.sql import SparkSession
 
@@ -202,7 +208,12 @@ class DeltaResults(ResultsStore):
         cols = list(out.columns)
         self.db.query(f"CREATE TABLE IF NOT EXISTS {self.table} (check STRING, variable STRING, item STRING, "
                       "segment STRING, metric STRING, value DOUBLE, threshold DOUBLE, status STRING, detail STRING, "
-                      "run_id STRING, run_ts STRING, profile STRING)")
+                      "run_id STRING, run_ts STRING, profile STRING, filters STRING)")
+        # a table created before `filters` existed keeps working; add the column once
+        try:
+            self.db.query(f"ALTER TABLE {self.table} ADD COLUMNS (filters STRING)")
+        except Exception:  # noqa: BLE001  (already there)
+            pass
         for start in range(0, len(out), 500):
             chunk = out.iloc[start:start + 500]
             values = ",\n".join(

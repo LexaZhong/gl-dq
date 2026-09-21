@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from gl_dq.core.config import dump_yaml
+from gl_dq.core.filters import OP_LABELS, Filter, FilterSet
+from gl_dq.core.filters import validate as validate_filter
 from gl_dq.core.knowledge import ConflictError, export_markdown, preprocessing_spec
 from gl_dq.core.results import STATUS_ICON, parse_segment, split_segment_columns
 from gl_dq.summary import filter_clause
@@ -25,6 +28,168 @@ def compact(v: float) -> str:
     return f"{v:,.0f}"
 
 
+def _slug(label: str) -> str:
+    """A filter key from its name: 'US states only' -> 'us_states_only'."""
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", label.lower())).strip("_") or "filter"
+
+
+def _signed(v: float) -> str:
+    return ("+" if v >= 0 else "−") + compact(abs(v))
+
+
+def _filter_cost(impact, key: str) -> str:
+    """'−1,204 rows (0.6%) · premium −2.1M (0.9%)' for one rule, '' when it could not be measured.
+
+    The premium change is signed rather than always negative: dropping cancellation rows removes
+    negative premium, which makes written premium go up.
+    """
+    if impact is None or impact.empty or key not in set(impact["key"]):
+        return ""
+    r = impact[impact["key"] == key].iloc[0]
+    if not r["rows_removed"]:
+        return "removes nothing"
+    change = -float(r["premium_removed"])  # what happens to the total, not what was taken out
+    return (f"−{int(r['rows_removed']):,} rows ({r['pct_rows']:.1%}) · "
+            f"premium {_signed(change)} ({-float(r['pct_premium']):+.1%})")
+
+
+def _add_filter_form(ctx, fs):
+    """Build one new rule: a picker for the ordinary cases, raw SQL for the rest."""
+    simple, advanced = st.tabs(["Simple", "Advanced (SQL)"])
+    new = None
+    with simple:
+        label = st.text_input("Name", key="gf_new_label", placeholder="Exclude zero exposure")
+        c1, c2 = st.columns([2, 1])
+        col = c1.selectbox("Column", ctx.schema.names(), key="gf_new_col")
+        op = c2.selectbox("Keep rows where", list(OP_LABELS), format_func=OP_LABELS.get, key="gf_new_op")
+        values: list[str] = []
+        if op in ("in", "not_in"):
+            try:
+                values = st.multiselect("Values", state.distinct_values(col), key="gf_new_vals")
+            except Exception as e:  # noqa: BLE001
+                st.caption(f"Could not list values: {e}")
+        elif op not in ("is_null", "not_null"):
+            v = st.text_input("Value", key="gf_new_val")
+            values = [v] if v else []
+        desc = st.text_input("Why", key="gf_new_desc", placeholder="Why these rows should not be priced on")
+        if label and (values or op in ("is_null", "not_null")):
+            new = Filter(key=_slug(label), label=label, description=desc, enabled=True,
+                         column=col, op=op, values=values)
+    with advanced:
+        label2 = st.text_input("Name", key="gf_adv_label")
+        desc2 = st.text_input("Why", key="gf_adv_desc")
+        expr = st.text_area("SQL predicate — rows are KEPT where this is true", key="gf_adv_expr", height=110,
+                            placeholder="NOT (covg_type_desc = 'ProductsCompletedOps' AND gl_bop_id NOT IN (\n"
+                                        "      SELECT gl_bop_id FROM {{ raw_table }} WHERE ...))")
+        st.caption("`{{ raw_table }}` is the unfiltered table — a rule that queries the table itself must "
+                   "use it, or it would define itself in terms of its own result.")
+        if label2 and expr.strip():
+            new = Filter(key=_slug(label2), label=label2, description=desc2, enabled=True, expr=expr.strip())
+
+    if new is None:
+        st.caption("Fill in a name and a condition.")
+        return None
+    if fs.get(new.key):
+        st.warning(f"A filter called `{new.key}` already exists.")
+        return None
+    b1, b2 = st.columns(2)
+    if b1.button("🔍 Test", key="gf_test", use_container_width=True):
+        try:
+            validate_filter(ctx, new)
+            one = FilterSet(filters=[new])
+            row = state.filter_impact(one)
+            st.success(f"Valid — it would remove {_filter_cost(row, new.key) or 'nothing'}.")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Invalid: {e}")
+    if b2.button("➕ Add filter", key="gf_add", type="primary", use_container_width=True):
+        try:
+            validate_filter(ctx, new)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Invalid: {e}")
+            return None
+        return new
+    return None
+
+
+def _promote_button(ctx, filters: dict[str, list[str]]):
+    """Turn the page-local selection into a global rule — explore first, commit when sure."""
+    fs = state.session_filters()
+    label = " · ".join(f"{c} in {', '.join(v[:3])}{'…' if len(v) > 3 else ''}" for c, v in filters.items())
+    if st.button("⬆ Make this a global filter", key="sum_promote",
+                 help="Adds it to the global filters above, for every page. Nothing is saved until you "
+                      "press 💾 Save for everyone there."):
+        new = [Filter(key=_slug(f"only_{col}_{'_'.join(vals[:2])}"), label=f"Only {col}: {', '.join(vals)}",
+                      description=f"Promoted from the portfolio summary view on {label}.",
+                      enabled=True, column=col, op="in", values=vals)
+               for col, vals in filters.items() if not fs.get(_slug(f"only_{col}_{'_'.join(vals[:2])}"))]
+        if not new:
+            st.warning("Those rules already exist in the global filters.")
+        else:
+            state.set_session_filters(FilterSet(filters=fs.filters + new))
+            st.rerun()
+
+
+def filters_section(ctx):
+    """Global filters: the rules, what each one costs, and apply / save / reset."""
+    fs = state.session_filters()
+    saved = state.saved_filters()
+    mine = [f for f in fs.filters if f.applies_to(ctx.profile)]
+    n_on = len(fs.active(ctx.profile))
+    # open when something is active: what has been removed is the first thing to see
+    with st.expander(f"🔎 **Global filters** — {n_on} active, applied to every page", expanded=bool(n_on)):
+        st.caption("These rules restrict the data every check, chart and refresh run sees. Each cost below is "
+                   "measured on its own, so overlapping rules do not add up — the total is the authority.")
+        try:
+            impact = state.filter_impact(fs)
+        except Exception as e:  # noqa: BLE001  (a broken rule must not take the page down)
+            impact = None
+            st.error(f"Could not measure the filters: {e}")
+
+        changed = False
+        for f in mine:
+            c1, c2 = st.columns([3, 2])
+            on = c1.checkbox(f.title, value=f.enabled, key=f"gf_on_{f.key}",
+                             help=f.description or None)
+            c1.caption(f"`{f.summary()}`" + (f" · {f.description}" if f.description else ""))
+            c2.markdown(f"<div style='padding-top:0.4rem'>{_filter_cost(impact, f.key) or '&nbsp;'}</div>",
+                        unsafe_allow_html=True)
+            if on != f.enabled:
+                f.enabled = on
+                changed = True
+        if changed:
+            state.set_session_filters(fs)
+            st.rerun()
+
+        if impact is not None and not impact.empty and n_on:
+            total = impact[impact["key"] == "TOTAL"].iloc[0]
+            kept = impact.attrs.get("rows_total", 0) - int(total["rows_removed"])
+            change = -float(total["premium_removed"])
+            st.info(f"**Kept {kept:,} of {impact.attrs.get('rows_total', 0):,} records** "
+                    f"(−{total['pct_rows']:.1%}) · written premium {_signed(change)} "
+                    f"({-float(total['pct_premium']):+.1%})")
+        elif not mine:
+            st.caption("No filters defined yet.")
+
+        b1, b2, b3 = st.columns([1.6, 1.3, 3])
+        if b1.button("💾 Save for everyone", disabled=fs == saved, key="gf_save",
+                     help="Writes config/filters.yaml, so other people and the refresh job use these rules"):
+            ctx.save_filters(fs)
+            state.clear_data_caches()
+            st.toast("Saved config/filters.yaml", icon="💾")
+            st.rerun()
+        if b2.button("↩ Reset to saved", disabled=fs == saved, key="gf_reset"):
+            state.reset_session_filters()
+            st.rerun()
+        if fs != saved:
+            b3.caption("⚠️ Session only — not saved, and the refresh job does not use them yet.")
+
+        with st.popover("➕ Add a filter", use_container_width=False):
+            added = _add_filter_form(ctx, fs)
+            if added is not None:
+                state.set_session_filters(FilterSet(filters=fs.filters + [added]))
+                st.rerun()
+
+
 def summary_page():
     """Front page: what is in the table - records, policy terms and written premium."""
     ctx = state.get_context()
@@ -33,11 +198,14 @@ def summary_page():
     st.caption(f"`{ctx.project.table}` · a policy is one distinct {' + '.join(f'`{c}`' for c in ctx.project.policy_key)} "
                f"· premium is `{m.written_premium}`. Queried live.")
 
+    filters_section(ctx)
+
     opts = [o for o in ctx.schema.names() if o in (ctx.project.segment_candidates or []) or o == ctx.project.src_col]
     default = [d for d in [ctx.project.src_col, "covg_type_desc"] if d in opts]
     dims = st.multiselect("Summarize by", opts, default=default, key="sum_dims")
 
-    # filter on the same dimensions: empty = everything
+    # a view filter for this page only: pick values of the dimensions above. Global rules live in
+    # the section above; this one can be promoted into one once it proves itself.
     filters: dict[str, list[str]] = {}
     if dims:
         for col, dim in zip(st.columns(min(len(dims), 4)), dims):
@@ -46,11 +214,13 @@ def summary_page():
             except Exception as e:  # noqa: BLE001
                 col.caption(f"{dim}: {e}")
                 continue
-            picked = col.multiselect(f"Filter {dim}", values, default=[], key=f"sum_f_{dim}",
+            picked = col.multiselect(f"Filter {dim} (this page only)", values, default=[], key=f"sum_f_{dim}",
                                      placeholder=f"All ({len(values)})")
             if picked:
                 filters[dim] = picked
     where = filter_clause(ctx, filters)
+    if filters:
+        _promote_button(ctx, filters)
 
     totals = state.summary([], where)
     t = totals.iloc[0]
@@ -132,11 +302,25 @@ def _summary_table(df, dims, key: str):
                        mime="text/csv", key=f"{key}_dl")
 
 
+def stale_filters_warning(ctx):
+    """Stored findings were computed under some set of filters; say so when it is not this one."""
+    runs = state.runs()
+    if not len(runs) or "filters" not in runs:
+        return
+    was = str(runs.iloc[-1].get("filters") or "")
+    now = ctx.filters.fingerprint(ctx)
+    if was != now:
+        st.warning(f"The last refresh ran with filters **{was or 'none'}**, but **{now or 'none'}** are active now. "
+                   "Stored findings and the live pages are measuring different populations — refresh to reconcile.")
+
+
 def refresh_controls(ctx, key: str):
     runs = state.runs()
     last = runs.iloc[-1]["run_ts"] if len(runs) else None
     c1, c2 = st.columns([3, 1])
-    c1.caption(f"Profile **{ctx.profile}** · table `{ctx.project.table}` · last refresh: **{last or 'never'}**")
+    active = ctx.filters.active(ctx.profile)
+    c1.caption(f"Profile **{ctx.profile}** · table `{ctx.project.table}` · last refresh: **{last or 'never'}**"
+               + (f" · 🔎 {len(active)} filter(s)" if active else ""))
     if c2.button("🔄 Refresh now", key=key, use_container_width=True):
         if ctx.project.backend == "databricks" and ctx.project.refresh_job_id:
             from databricks.sdk import WorkspaceClient
@@ -167,6 +351,7 @@ def tracker_page():
     wf = ctx.workflow
     st.title("🧭 Cleaning tracker")
     refresh_controls(ctx, "refresh_tracker")
+    stale_filters_warning(ctx)
     latest = state.latest_findings()
     if latest.empty:
         st.info("No refresh has been stored yet. Click **Refresh now** (or run `python jobs/refresh.py`).")
