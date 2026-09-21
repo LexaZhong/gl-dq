@@ -222,7 +222,10 @@ class SegmentMix(Check):
                      color_discrete_map={f"Z ≥ {t.z_target:.2f}": CATEGORICAL[0], f"Z < {t.z_target:.2f}": STATUS["warn"]},
                      hover_data={"premium": ":,.0f", "records": ":,", "claims": ":,", "z_claims": ":.2f",
                                  "cum_premium_share": ":.1%"},
-                     labels={"premium_share": "share of premium", "label": " × ".join(dims)})
+                     labels={"premium_share": "share of premium", "label": " × ".join(dims)},
+                     # without this the axis is ordered trace by trace, i.e. grouped by credibility
+                     # band, and the Pareto no longer descends
+                     category_orders={"label": list(top["label"])})
         fig.update_yaxes(tickformat=".0%")
         fig.update_xaxes(tickangle=-40, type="category")
         sel = st.plotly_chart(style(fig, 380, f"Top {len(top)} segments by premium ({' × '.join(dims)})"),
