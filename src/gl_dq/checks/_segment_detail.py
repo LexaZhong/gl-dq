@@ -269,24 +269,32 @@ def render_detail(check, st, mix_df: pd.DataFrame, dims: list[str], t) -> None:
         if not tr.empty:
             st.markdown(f"**How it is developing** — by `{time_dim}`")
             seg_tr = tr[tr["scope"] == SEGMENT]
-            g = st.columns(4)
-            # size is the segment's own (the book is orders of magnitude bigger and would flatten it);
-            # the ratios are unit-free, so those two compare directly against the rest of the book
-            panels = [("premium", "Premium", None, False), ("claims", "Claims", None, False),
-                      ("loss_ratio", "Loss ratio", ".0%", True),
-                      ("frequency", f"Frequency (per {per:,.0f})", None, True)]
-            for i, (col, label, tick, compare_scopes) in enumerate(panels):
-                sub = (tr if compare_scopes else seg_tr)
-                sub = sub[sub[col].notna()]
-                enc = dict(color="scope", color_discrete_map=colors,
-                           category_orders={"scope": [SEGMENT, REST]}) if compare_scopes else \
-                    dict(color_discrete_sequence=[colors[SEGMENT]])
-                fig = line(sub, x=time_dim, y=col, markers=True, **enc)
-                fig.update_yaxes(rangemode="tozero", **({"tickformat": tick} if tick else {}))
-                fig.update_layout(showlegend=col == "loss_ratio")
-                g[i].plotly_chart(style(fig, 240, label), use_container_width=True)
-            st.caption("Premium and claims are this segment's own; loss ratio and frequency are shown against the "
-                       "rest of the book, which is only meaningful because they are ratios.")
+            # two per row, paired by what they answer: how big, how bad, how it decomposes.
+            # Sizes are the segment's own (the book is orders of magnitude bigger and would flatten
+            # them); the ratios are unit-free, so those compare directly against the rest of the book.
+            rows = [[("premium", "Premium", None, False),
+                     ("exposure", f"Exposure ({base})" if base else "Exposure", None, False)],
+                    [("loss", "Loss", None, False),
+                     ("loss_ratio", "Loss ratio", ".0%", True)],
+                    [("severity", "Severity (loss per claim)", None, True),
+                     ("frequency", f"Frequency (per {per:,.0f})", None, True)]]
+            first_compared = True
+            for panels in rows:
+                g = st.columns(2)
+                for i, (col, label, tick, compare_scopes) in enumerate(panels):
+                    sub = (tr if compare_scopes else seg_tr)
+                    sub = sub[sub[col].notna()]
+                    enc = dict(color="scope", color_discrete_map=colors,
+                               category_orders={"scope": [SEGMENT, REST]}) if compare_scopes else \
+                        dict(color_discrete_sequence=[colors[SEGMENT]])
+                    fig = line(sub, x=time_dim, y=col, markers=True, **enc)
+                    fig.update_yaxes(rangemode="tozero", **({"tickformat": tick} if tick else {}))
+                    fig.update_layout(showlegend=compare_scopes and first_compared)
+                    g[i].plotly_chart(style(fig, 260, label), use_container_width=True)
+                    first_compared = first_compared and not compare_scopes
+            st.caption("Premium, exposure and loss are this segment's own — the rest of the book is larger by orders "
+                       "of magnitude and would flatten them. Loss ratio, severity and frequency are shown against "
+                       "the rest of the book, which is only meaningful because they are rates.")
 
     # ---- how the metrics are distributed ----------------------------------------------
     st.markdown("**Distribution across policy terms**")
