@@ -22,7 +22,8 @@ measures:
   exposure_base: expn_bs
 
 policy_key: [pol_num, pol_eff_dt, pol_exp_dt]   # what identifies one policy term (used for policy counts)
-segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, loc_st_abbr, tx_type_nm, pol_stat]
+segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, mm_seg_cd, loc_st_abbr, trr_cd,
+                     class1_cd, each_occ_lmt_amt, genl_ag_lmt_amt, tx_type_nm, pol_stat]
 
 sql_vars:                          # referenced by the SOT queries in <config_dir>/sql/*.sql
   sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-cimm_csm.premium_transx_seg_enriched_2026q2}

@@ -62,6 +62,14 @@ issues:
     description: BMQ loss-year 2022 claim counts are double counted.
     expect: {check: loss_recon, item: claim_count, segment: {src: BMQ, loss_yr: "2022"}}
 
+  - id: values_limit_only_in_bmq
+    description: An each-occurrence limit of 10M is used by BMQ only, not by BOP or CMQ.
+    expect: {check: value_checks, variable: each_occ_lmt_amt, metric: source_unique_values, segment: {src: BMQ}}
+
+  - id: values_deductible_sentinel
+    description: 1.5% of BOP bi_ded_amt rows carry the sentinel 99999, far outside the real ladder.
+    expect: {check: value_checks, variable: bi_ded_amt, metric: pct_out_of_bounds, segment: {src: BOP}}
+
   - id: expo_class_mixed_base
     description: The most common class code has 30% of rows on a different exposure base.
     expect: {check: exposure, variable: expn_bs, metric: n_classes_multi_base}

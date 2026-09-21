@@ -67,6 +67,7 @@ class CheckConfig(BaseModel):
 
     enabled: bool = True
     order: int = 100
+    category: str = "Checks"  # sidebar section; "Checks" = is the data right, others group by purpose
 
 
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^{}]*))?\}")

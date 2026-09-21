@@ -1,0 +1,15 @@
+enabled: true
+order: 80
+category: Portfolio analysis
+# ISO rating dimensions: where the premium sits, and whether each cell has enough claims to price.
+dimensions: [class1_cd, trr_cd, each_occ_lmt_amt, genl_ag_lmt_amt, bi_ded_amt, pd_ded_amt, csl_ded_amt]
+default_dimension: class1_cd
+split_by_source: false
+full_credibility: 1082      # claims for full credibility (square-root rule, +/-5% at 90%)
+top_n: 25
+thresholds:
+  large_share: 0.05         # premium share above which a segment drives the book
+  material_share: 0.005     # premium share worth worrying about at all
+  z_target: 0.5             # credibility a material segment should reach
+  thin_premium_warn: 0.20   # share of premium below z_target
+  thin_premium_fail: 0.40

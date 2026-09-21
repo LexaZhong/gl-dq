@@ -51,6 +51,18 @@ SOURCES = {
 DEDUCTIBLES = np.array([0, 250, 500, 1_000, 2_500, 5_000])
 DED_CREDIT = dict(zip(DEDUCTIBLES, [1.00, 0.98, 0.96, 0.93, 0.88, 0.83]))
 N_CLASSES = 60
+# ISO-style rating dimensions. Limit ladder: (each occurrence, general aggregate, share, rate factor);
+# higher limits cost more, so the premium mix is not uniform across the ladder.
+LIMITS = [
+    (1_000_000, 2_000_000, 0.46, 1.00),
+    (2_000_000, 4_000_000, 0.28, 1.18),
+    (1_000_000, 1_000_000, 0.11, 0.94),
+    (5_000_000, 5_000_000, 0.10, 1.42),
+    (500_000, 1_000_000, 0.05, 0.86),
+]
+TERRITORIES_PER_STATE = 4  # trr_cd = <state index><territory>, e.g. 0103
+# market segment -> (share, exposure multiplier)
+MARKET_SEGMENTS = {"SMALL": (0.62, 0.55), "MIDDLE": (0.31, 1.7), "LARGE": (0.07, 6.0)}
 
 
 def _class_table(rng: np.random.Generator) -> pd.DataFrame:
@@ -94,13 +106,26 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     bi_ded = np.where(csl, np.nan, rng.choice(DEDUCTIBLES, n))
     pd_ded = np.where(csl, np.nan, rng.choice(DEDUCTIBLES, n))
     csl_ded = np.where(csl, rng.choice(DEDUCTIBLES, n), np.nan)
+    # --- ISO rating dimensions ---------------------------------------------
+    # territory: a few per state, skewed so a handful of cells carry most of the book
+    terr_idx = np.minimum(rng.geometric(0.55, n) - 1, TERRITORIES_PER_STATE - 1)
+    state_idx = pd.Series(state).map({s: i for i, s in enumerate(state_names)}).to_numpy()
+    trr_cd = [f"{si + 1:02d}{ti + 1:02d}" for si, ti in zip(state_idx, terr_idx)]
+    lim_idx = rng.choice(len(LIMITS), size=n, p=[l[2] for l in LIMITS])
+    each_occ = np.array([LIMITS[i][0] for i in lim_idx], dtype=float)
+    genl_ag = np.array([LIMITS[i][1] for i in lim_idx], dtype=float)
+    limit_factor = np.array([LIMITS[i][3] for i in lim_idx])
+    seg_names = list(MARKET_SEGMENTS)
+    mm_seg = rng.choice(seg_names, size=n, p=[MARKET_SEGMENTS[s][0] for s in seg_names])
     policies = pd.DataFrame({
         "src": src,
         "pol_num": [f"{s}{i:07d}" for s, i in zip(src, range(1, n + 1))],
         "pol_eff_dt": eff, "pol_exp_dt": exp, "pol_stat": stat,
         "term_frac": term_days / 365, "unearned": unearned,
         "base_tx": np.where(rng.random(n) < 0.45, "Renewal", "New Business"),
-        "loc_st_abbr": state, "primary_cls": primary_cls,
+        "loc_st_abbr": state, "primary_cls": primary_cls, "trr_cd": trr_cd,
+        "each_occ_lmt_amt": each_occ, "genl_ag_lmt_amt": genl_ag, "limit_factor": limit_factor,
+        "mm_seg_cd": mm_seg, "seg_expo_mult": [MARKET_SEGMENTS[s][1] for s in mm_seg],
         "bi_ded_amt": bi_ded, "pd_ded_amt": pd_ded, "csl_ded_amt": csl_ded,
     })
 
@@ -129,7 +154,8 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     median = items["expn_bs"].map(lambda b: EXPO_BASES[b][0])
     scale = np.where(items["src"].eq("CMQ"), 2.5, 1.0)
     items["expo_unit"] = np.maximum(np.round(
-        median * scale * rng.lognormal(0, 0.9, len(items)) * items["term_frac"], 2), 0.01)
+        median * scale * items["seg_expo_mult"] * rng.lognormal(0, 0.9, len(items))
+        * items["term_frac"], 2), 0.01)
 
     # --- coverage rows ----------------------------------------------------
     covg_names = list(COVERAGES)
@@ -146,7 +172,7 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     ded = rows["csl_ded_amt"].fillna(rows["bi_ded_amt"]).astype(int)
     ded_credit = ded.map(DED_CREDIT)
     gross = (rows["expo_amt"] * base_rate * rows["rate_mult"] * state_factor * covg_share
-             * ded_credit * rng.lognormal(0, 0.25, len(rows)))
+             * ded_credit * rows["limit_factor"] * rng.lognormal(0, 0.25, len(rows)))
     rows["tx_type_nm"] = rows["base_tx"]
     # CMQ carries net premium on the base row; BOP/BMQ book a separate cancellation row
     rows["tot_wrtn_prm_amt"] = np.round(np.where(rows["src"].eq("CMQ"), gross * (1 - rows["unearned"]), gross), 2)
@@ -187,7 +213,8 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
 
     out = pd.concat([rows, endo, canc], ignore_index=True)
     cols = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class1_cd", "expo_amt",
-            "expn_bs", "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "tot_wrtn_prm_amt",
+            "expn_bs", "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "trr_cd", "mm_seg_cd",
+            "each_occ_lmt_amt", "genl_ag_lmt_amt", "tot_wrtn_prm_amt",
             "pol_stat", "bi_ded_amt", "pd_ded_amt", "csl_ded_amt", "tx_type_nm", "allocation",
             "claim_alloc", "evt_dt"]
     out = out[cols].sort_values(["src", "pol_num", "rsk_loc_id", "rsk_itm_id", "covg_type_desc"]).reset_index(drop=True)
@@ -247,6 +274,12 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     df.loc[pick(not_bmq19, 10), "tot_wrtn_prm_amt"] *= 1000
     yr23 = df.index[pol_yr.eq(2023) & df["class1_cd"].notna() & df["class1_cd"].ne("")]
     df.loc[pick(yr23, int(0.02 * pol_yr.eq(2023).sum())), "class1_cd"] = "99999"
+
+    # value issues: a limit value only one source uses, and a deductible sentinel
+    bmq_idx = df.index[df["src"].eq("BMQ")]
+    df.loc[pick(bmq_idx, int(0.01 * len(bmq_idx))), "each_occ_lmt_amt"] = 10_000_000.0
+    bop_ded = df.index[df["src"].eq("BOP") & df["bi_ded_amt"].notna()]
+    df.loc[pick(bop_ded, int(0.015 * len(bop_ded))), "bi_ded_amt"] = 99_999.0
 
     # exposure issues
     top_class = df["class1_cd"].value_counts().index[0]

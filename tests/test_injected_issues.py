@@ -27,8 +27,15 @@ def test_injected_issue_is_flagged(findings_injected, issue):
     assert f["status"].isin(["warn", "fail"]).any(), f"{issue['id']} not flagged:\n{f.to_string()}"
 
 
-def test_clean_data_flags_nothing(findings_clean):
-    flagged = findings_clean[findings_clean["status"].isin(["warn", "fail"])]
+def test_clean_data_flags_nothing(findings_clean, ctx_clean):
+    """Data-quality checks must be silent on clean data.
+
+    Portfolio analysis modules are excluded: concentration and thin rating cells are properties of
+    the book itself, so they are flagged on clean data by design.
+    """
+    quality = ctx_clean.checks_by_category().get("Checks", [])
+    flagged = findings_clean[findings_clean["status"].isin(["warn", "fail"])
+                             & findings_clean["check"].isin(quality)]
     assert flagged.empty, flagged.to_string()
 
 

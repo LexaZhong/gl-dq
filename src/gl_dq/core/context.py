@@ -78,6 +78,13 @@ class Context:
                 out.append((cfg.order, name))
         return [n for _, n in sorted(out)]
 
+    def checks_by_category(self) -> dict[str, list[str]]:
+        """Enabled checks grouped into sidebar sections, each in `order`, sections first-seen first."""
+        groups: dict[str, list[str]] = {}
+        for name in self.enabled_checks():
+            groups.setdefault(self.check_config(name).category, []).append(name)
+        return groups
+
 
 def load_context(profile: str | None = None) -> Context:
     profile = profile or os.environ.get("DQ_PROFILE", "synthetic")

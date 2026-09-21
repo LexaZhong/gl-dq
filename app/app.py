@@ -61,9 +61,11 @@ pages = {
                 default=start == "preprocessing"),
         st.Page(knowledge_page, title="Knowledge base", icon="📚", url_path="knowledge", default=start == "knowledge"),
     ],
-    "Checks": [
-        st.Page(_page_fn(n), title=ctx.checks[n].title, icon=ctx.checks[n].icon, url_path=n, default=start == n)
-        for n in checks
-    ],
 }
+# check pages group into sidebar sections by their config `category` (Checks, Portfolio analysis, …)
+for section, names in ctx.checks_by_category().items():
+    pages[section] = [
+        st.Page(_page_fn(n), title=ctx.checks[n].title, icon=ctx.checks[n].icon, url_path=n, default=start == n)
+        for n in names
+    ]
 st.navigation(pages).run()

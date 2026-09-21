@@ -1,0 +1,9 @@
+{# One row per rating segment: size (premium, records) and claim count, for mix and credibility #}
+SELECT
+  {% for d in dims %}{{ sel(d) }}, {% endfor %}
+  COUNT(*) AS records,
+  SUM({{ premium }}) AS premium,
+  SUM({{ claims }}) AS claims
+FROM {{ table }}
+{% if where %}WHERE {{ where }}{% endif %}
+GROUP BY {% for d in dims %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}

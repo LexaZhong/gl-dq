@@ -1,0 +1,8 @@
+{# Value inventory: how often each value of a column appears in each source #}
+SELECT
+  {{ sel(src_col) }},
+  CAST({{ x }} AS STRING) AS value,
+  COUNT(*) AS n
+FROM {{ table }}
+WHERE {{ x }} IS NOT NULL
+GROUP BY 1, 2

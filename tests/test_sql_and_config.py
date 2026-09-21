@@ -78,9 +78,14 @@ def test_config_roundtrip(ctx_injected, tmp_path):
         ctx_injected.config_store = store
 
 
-def test_page_order(ctx_injected):
-    assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "distribution",
-                                             "premium_recon", "loss_recon", "exposure"]
+def test_page_order_and_sections(ctx_injected):
+    assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "value_checks",
+                                             "distribution", "premium_recon", "loss_recon", "exposure",
+                                             "segment_mix"]
+    sections = ctx_injected.checks_by_category()
+    assert list(sections) == ["Checks", "Portfolio analysis"]          # order of first appearance
+    assert sections["Portfolio analysis"] == ["segment_mix"]
+    assert sections["Checks"][:4] == ["key_uniqueness", "missing_rate", "business_rules", "value_checks"]
 
 
 def test_workspace_profile_inherits_prod(monkeypatch):

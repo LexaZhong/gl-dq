@@ -1,0 +1,14 @@
+{# Plausibility of numeric values, per source: bounds, sign, and the median (for scale drift) #}
+SELECT
+  {{ sel(src_col) }},
+  COUNT(*) AS n_rows,
+  COUNT({{ x }}) AS n_nonnull,
+  SUM(CASE WHEN {{ x }} < 0 THEN 1 ELSE 0 END) AS n_negative,
+  SUM(CASE WHEN {{ x }} = 0 THEN 1 ELSE 0 END) AS n_zero,
+  {% if lo is not none %}SUM(CASE WHEN {{ x }} < {{ lit(lo) }} THEN 1 ELSE 0 END){% else %}0{% endif %} AS n_below,
+  {% if hi is not none %}SUM(CASE WHEN {{ x }} > {{ lit(hi) }} THEN 1 ELSE 0 END){% else %}0{% endif %} AS n_above,
+  MIN({{ x }}) AS min,
+  MAX({{ x }}) AS max,
+  {{ dialect.percentiles(x, [0.5]) }} AS median
+FROM {{ table }}
+GROUP BY 1
