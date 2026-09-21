@@ -191,3 +191,32 @@ def test_shipped_filters_are_all_off(ctx_injected):
     assert not fs.active(ctx_injected.profile)
     for f in fs.filters:
         assert f.description, f"{f.key} needs to say why it exists"
+
+
+# ---- reference lists (a CSV of ids) ---------------------------------------------------
+def test_expr_can_read_a_reference_csv(ctx_injected, tmp_path):
+    """A rule can match against a list kept outside the pipeline: `{{ var }}` comes from sql_vars,
+    so the same rule reads a CSV locally and a table (or read_files) on Databricks."""
+    csv = tmp_path / "keep_classes.csv"
+    # non-blank ids only: a blank line in a CSV reads back as NULL, never as an empty string
+    classes = [str(c) for c in ctx_injected.db.query(
+        "SELECT DISTINCT class1_cd FROM gl_master_synth WHERE class1_cd <> '' ORDER BY 1 LIMIT 3")["class1_cd"]]
+    csv.write_text("class1_cd\n" + "\n".join(classes) + "\n", encoding="utf-8")
+
+    project = ctx_injected.project.model_copy(
+        update={"sql_vars": {**ctx_injected.project.sql_vars,
+                             "class_list": f"read_csv_auto('{csv.as_posix()}')"}})
+    ctx = replace(ctx_injected, project=project, filters=FilterSet(filters=[Filter(
+        key="listed_classes", enabled=True,
+        expr="CAST(class1_cd AS STRING) IN (SELECT CAST(class1_cd AS STRING) FROM {{ class_list }})")]))
+
+    assert str(csv) in predicate(ctx, ctx.filters.filters[0])
+    got = set(summarize(ctx, ["class1_cd"])["class1_cd"].astype(str))
+    assert got == set(classes)                      # exactly the listed ids survive
+    assert summarize(ctx, []).iloc[0].records < summarize(ctx_injected, []).iloc[0].records
+
+
+def test_a_missing_sql_var_is_named_in_the_error(ctx_injected):
+    f = Filter(key="k", enabled=True, expr="id IN (SELECT id FROM {{ nope }})")
+    with pytest.raises(Exception, match="nope"):
+        predicate(ctx_injected, f)

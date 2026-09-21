@@ -30,6 +30,11 @@ sql_vars:                          # referenced by the SOT queries in <config_di
   sot_loss_table: ${DQ_SOT_LOSS_TABLE:-cimm_csm.loss_transx_seg_enriched_2026q2}
   study_from: ${DQ_STUDY_FROM:-2014-01-01}    # policy effective-date window of the study
   study_to: ${DQ_STUDY_TO:-2025-12-31}
+  # reference lists used by config/filters.yaml. A CSV on a volume is read in place; point this at a
+  # table name instead once the list is loaded (faster, and it can be refreshed on a schedule).
+  pco_ids_source: >-
+    ${DQ_PCO_IDS_TABLE:-read_files('${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/reference/pco_ids.csv',
+    format => 'csv', header => true)}
 
 # config + knowledge live in the UC Volume; override with DQ_CONFIG_DIR=config to dry-run from a laptop
 config_dir: ${DQ_CONFIG_DIR:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/config}

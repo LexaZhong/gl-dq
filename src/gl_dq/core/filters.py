@@ -91,8 +91,10 @@ def _literal(dialect, column_type: str, value: str):
 def predicate(ctx, f: Filter) -> str:
     """SQL that is TRUE for the rows this rule keeps."""
     if f.expr:
+        # same variables a source-of-truth query gets, so a rule can name a reference list
+        # (a CSV of ids, a lookup table) that is spelled differently in each profile
         return jinja2.Template(f.expr, undefined=jinja2.StrictUndefined).render(
-            raw_table=ctx.project.table, table=ctx.project.table).strip()
+            raw_table=ctx.project.table, table=ctx.project.table, **ctx.project.sql_vars).strip()
     col = ctx.schema.validate([f.column])[0]
     ref, typ, d = ctx.schema.ref(col), ctx.schema.type_of(col), ctx.dialect
     if f.op == "is_null":

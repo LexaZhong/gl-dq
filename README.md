@@ -58,6 +58,27 @@ filters:
 A rule **keeps** the rows its predicate is true for, so a null value is excluded unless the rule says
 otherwise. `{{ raw_table }}` is the unfiltered table — a rule that queries the table itself must use it.
 
+**Matching against a list kept outside the pipeline** (a CSV of `gl_bop_id`s, a lookup table): name it
+with a profile `sql_vars` entry and the same rule works on every backend.
+
+```yaml
+# config/profiles/<profile>.yaml
+sql_vars:
+  pco_ids_source: "read_csv_auto('data/reference/pco_ids.csv')"     # duckdb / parquet: read in place
+  # prod: read_files('/Volumes/.../reference/pco_ids.csv', format => 'csv', header => true)
+  # or, once the CSV is loaded into a table: my_catalog.my_schema.pco_ids
+
+# config/filters.yaml
+expr: |
+  NOT (covg_type_desc = 'ProductsCompletedOps'
+       AND CAST(gl_bop_id AS STRING) NOT IN (SELECT CAST(gl_bop_id AS STRING)
+                                             FROM {{ pco_ids_source }}
+                                             WHERE gl_bop_id IS NOT NULL))
+```
+Cast both sides: a CSV column is always text. A blank line in a CSV reads back as NULL, not as an
+empty string. Loading the CSV into a table is worth it once the list is large or read often —
+`read_files`/`read_csv_auto` re-reads the file on every query.
+
 How it reaches every query: `ctx.table_expr` renders `{{ table }}` as
 `(SELECT * FROM gl_master WHERE <filters>) AS gl`, so no SQL template changes and nothing can forget to
 apply it. Source-of-truth queries are restricted to the surviving `pol_num` + `pol_eff_dt` pairs, keeping

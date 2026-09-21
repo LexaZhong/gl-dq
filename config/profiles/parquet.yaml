@@ -22,6 +22,9 @@ sql_vars:
   sot_loss_table: sot_loss
   study_from: ${DQ_STUDY_FROM:-2014-01-01}
   study_to: ${DQ_STUDY_TO:-2025-12-31}
+  # DuckDB reads the reference CSV in place (no import step). Absolute path or relative to where
+  # you launched the app; a folder or *.csv glob works too.
+  pco_ids_source: "read_csv_auto('${DQ_PCO_IDS_CSV:-data/reference/pco_ids.csv}')"
 
 config_dir: ${DQ_CONFIG_DIR:-config}
 knowledge_dir: ${DQ_KNOWLEDGE_DIR:-data/knowledge_parquet}
