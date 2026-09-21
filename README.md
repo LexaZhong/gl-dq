@@ -13,13 +13,17 @@ stored as YAML, so the knowledge carries over to other projects.
 | 🔑 Key uniqueness | Is the key unique per source and across the whole table? Greedy key suggestion |
 | 🔲 Missing rate | Missing share per variable × level, with per-variable thresholds, sentinels and `applies_when` |
 | 📏 Business rules | SQL validity rules (date order, event inside policy period, deductible exclusivity…) |
+| 🔤 Values check | Values used by one source only, values outside plausible bounds, sentinel spikes, and medians that differ by source like a unit error |
 | 📊 Distributions | User-chosen variables and levels, percentile bins (preset or custom), log transforms, PSI, outliers, new categories |
 | 💰 Premium reconciliation | `tot_wrtn_prm_amt` vs the pricing-study source of truth by src × coverage (grain is configurable) |
 | 📉 Loss summary | `allocation` and claim count by loss year vs source of truth; severity, frequency (per exposure base) and loss ratio by segment |
 | 📐 Exposure summary | `expo_amt` by `expn_bs`, premium per exposure, negative or zero exposure, classes on more than one base |
+| 🧩 Segment mix & credibility | *(Portfolio analysis)* premium, record and claim shares per ISO rating dimension with a Pareto, and credibility Z = min(1, √(n/1082)) on claims and records: which segments drive the book, which are too thin to price |
 
 Every check page has ⚙️ **Settings** (Apply for your session, or 💾 **Save to config** for everyone), the
 findings table, the SQL it ran, and a 📝 **Status & notes** panel for the selected variable.
+
+Pages group into sidebar sections by each check's `category` — `Checks` (is the data right?) by default, `Portfolio analysis` for modules that describe the book rather than validate it. Moving a page between sections is a one-line config change.
 
 ## Review workflow (`config/workflow.yaml`)
 Each column has one stage, a named assignee per role, and a timestamped status history:

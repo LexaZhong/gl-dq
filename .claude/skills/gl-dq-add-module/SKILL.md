@@ -44,9 +44,10 @@ If an existing module already answers it, suggest configuring that one (gl-dq-co
 - [ ] Every column goes through `self.schema.ref()` / `sel()` in templates, and `self.schema.validate([...])` runs first. No f-string column names. Literals use `lit()`.
 - [ ] Config-authored SQL predicates (like `applies_when`) are allowed **only from YAML**, never from free-text UI inputs.
 - [ ] `run()` is pure (no streamlit import at module top); UI imports go inside `settings_ui` / `render`.
+- [ ] Set `category` in the YAML when the page is not a data-quality check (`Checks` is the default; `Portfolio analysis` groups modules that describe the book). The sidebar groups by it, so `app/app.py` still needs no edit.
 - [ ] Findings use the shared schema: `variable, item, segment (segment_key), metric, value, threshold, status (grade()), detail`. Status ∈ pass/info/warn/fail.
 - [ ] Levels are user-selectable: `settings_ui` offers `self.segment_options()` in a multiselect and returns a modified **copy** of cfg; widget keys are prefixed with the module name.
-- [ ] `render()` uses `gl_dq.ui.components.status_table` for tables and `gl_dq.ui.theme` for charts: `series_encoding()` for series colors (≤ 8 series, else small multiples), `line()` instead of `px.line` (SVG, never WebGL), `SEQ_SCALE` for heatmaps, `DIVERGING` for signed differences, `style(fig, height, title)`. No dual axes; different exposure bases never share an axis.
+- [ ] `render()` uses `gl_dq.ui.components.status_table` for tables and `gl_dq.ui.theme` for charts: `series_encoding()` for series colors (≤ 8 series, else small multiples), `ordered_categories(df, enc)` passed as `category_orders` so numeric levels (pol_yr) are not ordered as text, `line()` instead of `px.line` (SVG, never WebGL), `SEQ_SCALE` for heatmaps, `DIVERGING` for signed differences, `style(fig, height, title)`. No dual axes; different exposure bases never share an axis.
 - [ ] Expensive interactive recomputation goes through `state.cached_method(self.name, self.cfg, "<method>", **kwargs)`.
 - [ ] SQL portable across DuckDB and Databricks: use `dialect.percentiles/row/distinct_list` helpers, `CAST(x AS STRING)`, `GROUP BY` ordinals, no `QUALIFY`/`FILTER`/`::` casts.
 
