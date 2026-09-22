@@ -119,7 +119,8 @@ class ParquetDatabase(DuckDBDatabase):
     """Parquet files queried directly (DuckDB in memory): each view name becomes a table.
 
     Paths may be a single file, a folder or a glob, local or a /Volumes path that the process can
-    read. Nothing is copied - DuckDB reads the parquet in place.
+    read. Nothing is copied - DuckDB reads the file in place. A .csv path is read as CSV, so a
+    study downloaded from a SQL editor can be reconciled against without converting it first.
     """
 
     def __init__(self, views: dict[str, str]):
@@ -134,15 +135,16 @@ class ParquetDatabase(DuckDBDatabase):
                 raise ValueError(f"invalid view name {name!r}: use a plain identifier")
             target = str(Path(path) / "*.parquet") if Path(path).is_dir() else str(path)
             target = target.replace("\\", "/")  # DuckDB globs use forward slashes on every platform
+            reader = "read_csv_auto" if target.lower().endswith(".csv") else "read_parquet"
             try:
                 self._con.execute(
-                    f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM read_parquet({Dialect.lit(target)})")
+                    f"CREATE OR REPLACE VIEW {name} AS SELECT * FROM {reader}({Dialect.lit(target)})")
             except Exception as e:  # a missing optional source (e.g. no study extract) must not break the rest
                 self.missing[name] = f"{target}: {e}"
 
     def describe(self, table):
         if table in self.missing:
-            raise FileNotFoundError(f"no parquet found for {table!r} ({self.missing[table]})")
+            raise FileNotFoundError(f"no file found for {table!r} ({self.missing[table]})")
         return super().describe(table)
 
 

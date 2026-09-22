@@ -126,6 +126,37 @@ DQ_PROFILE=synthetic .venv/bin/python -m streamlit run app/app.py
 `synthetic/injected_issues.yaml` lists the 18 data problems that were planted on purpose. The tests check that
 each one is flagged and that the clean dataset flags nothing.
 
+## Reconciling against the pricing study locally
+The reconciliations need the study as well as `gl_master`. Get both as files, point the `parquet`
+profile at them, and the same checks run on a laptop:
+
+```powershell
+# Windows PowerShell - forward slashes, absolute paths
+$env:DQ_PROFILE            = "parquet"
+$env:DQ_PARQUET_TABLE      = "C:/Users/you/gl-dq/data/gl_master.parquet"
+$env:DQ_PARQUET_SOT_PREMIUM= "C:/Users/you/gl-dq/data/sot_premium.csv"   # .csv or .parquet
+$env:DQ_PARQUET_SOT_LOSS   = "C:/Users/you/gl-dq/data/sot_loss.csv"      # optional
+python jobs/check_setup.py --profile parquet
+python -m streamlit run app/app.py
+```
+```bash
+# macOS / Linux
+export DQ_PROFILE=parquet DQ_PARQUET_TABLE=data/gl_master.parquet \
+       DQ_PARQUET_SOT_PREMIUM=data/sot_premium.csv
+streamlit run app/app.py
+```
+
+The study extract is the **output** of `config/sql/sot_premium_prod.sql` (one row per `src` × `pol_yr`
+with `wrtn_prm`), not the raw study table — that is what `jobs/export_extract.py` writes, and what to
+download if you run the query in the SQL editor. The `parquet` profile therefore reconciles against it
+with a passthrough (`sql/sot_premium_extract.sql`); everything else — grain, tolerances, the
+pipeline-side `where` — is inherited from `prod`, so a local reconciliation matches the Databricks one.
+If your extract is the raw study table, point `sot_query` back at `sql/sot_premium_prod.sql`.
+
+Each view may be a `.parquet` or `.csv` file, a folder or a glob. Keep the files under `data/`
+(gitignored) — the repo is public. `jobs/check_setup.py` reports a missing or mis-shaped study
+before the dashboard does.
+
 ## How it fits together
 ```
 config/profiles/<profile>.yaml   table, backend, measures, derived columns (pol_yr, loss_yr), storage locations
