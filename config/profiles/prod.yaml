@@ -17,7 +17,7 @@ derived_columns:
 measures:
   written_premium: tot_wrtn_prm_amt
   loss: allocation
-  claim_count: claim_ant
+  claim_count: claim_cnt
   exposure: expo_amt
   exposure_base: expn_bs_std
 
@@ -32,8 +32,8 @@ sql_vars:                          # referenced by the SOT queries in <config_di
   study_to: ${DQ_STUDY_TO:-2025-12-31}
   # reference lists used by config/filters.yaml. A CSV on a volume is read in place; point this at a
   # table name instead once the list is loaded (faster, and it can be refreshed on a schedule).
-  pco_ids_source: >-
-    ${DQ_PCO_IDS_TABLE:-read_files('${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/reference/pco_ids.csv',
+  no_pco_ids_source: >-
+    ${DQ_NO_PCO_IDS_TABLE:-read_files('${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}/reference/gl_bop_id_not_rating_pco.csv',
     format => 'csv', header => true)}
 
 # config + knowledge live in the UC Volume; override with DQ_CONFIG_DIR=config to dry-run from a laptop

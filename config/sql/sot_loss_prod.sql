@@ -7,7 +7,7 @@
 -- POLICY filter, not a loss filter: it keeps the same policy population as the premium
 -- source of truth.
 --
--- claim_ant vs COUNT(DISTINCT OCUR_ID): the pipeline sums an allocated claim count per
+-- claim_cnt vs COUNT(DISTINCT OCUR_ID): the pipeline sums an allocated claim count per
 -- row, while the study counts distinct occurrences. If one claim touches several coverages
 -- or locations these will not agree; compare them once and, if they measure different
 -- things, either change sot_claim_count_col or widen tolerance_claims and say so in a note.
@@ -27,7 +27,7 @@ SELECT
   CASE WHEN BMQ_IND = 'Y' THEN 'BMQ' ELSE 'CMQ' END AS src,
   YEAR(EVT_DT)                                      AS loss_yr,
   SUM(RLA)                                          AS allocation,
-  COUNT(DISTINCT OCUR_ID)                           AS claim_ant
+  COUNT(DISTINCT OCUR_ID)                           AS claim_cnt
 FROM {{ sot_loss_table }}
 WHERE LOB = 'GL'
   AND EVT_DT IS NOT NULL

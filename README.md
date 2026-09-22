@@ -64,16 +64,16 @@ with a profile `sql_vars` entry and the same rule works on every backend.
 ```yaml
 # config/profiles/<profile>.yaml
 sql_vars:
-  pco_ids_source: "read_csv_auto('data/reference/pco_ids.csv')"     # duckdb / parquet: read in place
-  # prod: read_files('/Volumes/.../reference/pco_ids.csv', format => 'csv', header => true)
-  # or, once the CSV is loaded into a table: my_catalog.my_schema.pco_ids
+  no_pco_ids_source: "read_csv_auto('data/reference/gl_bop_id_not_rating_pco.csv')"   # duckdb / parquet
+  # prod: read_files('/Volumes/.../reference/gl_bop_id_not_rating_pco.csv', format => 'csv', header => true)
+  # or, once the CSV is loaded into a table: my_catalog.my_schema.gl_bop_id_not_rating_pco
 
 # config/filters.yaml
 expr: |
   NOT (covg_type_desc = 'ProductsCompletedOps'
-       AND CAST(gl_bop_id AS STRING) NOT IN (SELECT CAST(gl_bop_id AS STRING)
-                                             FROM {{ pco_ids_source }}
-                                             WHERE gl_bop_id IS NOT NULL))
+       AND CAST(gl_bop_id AS STRING) IN (SELECT CAST(gl_bop_id AS STRING)
+                                         FROM {{ no_pco_ids_source }}
+                                         WHERE gl_bop_id IS NOT NULL))
 ```
 Cast both sides: a CSV column is always text. A blank line in a CSV reads back as NULL, not as an
 empty string. Loading the CSV into a table is worth it once the list is large or read often —

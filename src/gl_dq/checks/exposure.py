@@ -94,14 +94,17 @@ class Exposure(Check):
         sel = st.selectbox("Exposure base", bases, key="ex_base") if bases else None
         view = (summ[summ[base].astype(str) == str(sel)] if sel else summ).copy()
         if by:
-            from gl_dq.ui.theme import line, series_encoding, style
+            from gl_dq.ui.theme import line, ordered_categories, series_encoding, style
 
             x = by[-1]
             enc = series_encoding(view, by[0], self.project.sources, by) if len(by) > 1 else dict(color_discrete_sequence=["#2a78d6"])
+            # series_encoding casts the level columns to strings, and plotly then orders an axis by
+            # first appearance: a source that starts writing late would put 2021 before 2018
+            orders = ordered_categories(view, enc, x)
             c1, c2 = st.columns(2)
-            fig = px.bar(view, x=x, y="exposure", barmode="group", **enc)
+            fig = px.bar(view, x=x, y="exposure", barmode="group", category_orders=orders, **enc)
             c1.plotly_chart(style(fig, 320, f"{m.exposure}: {sel}"), use_container_width=True)
-            fig = line(view, x=x, y="premium_per_expo", markers=True, **enc)
+            fig = line(view, x=x, y="premium_per_expo", markers=True, category_orders=orders, **enc)
             fig.update_yaxes(rangemode="tozero")
             c2.plotly_chart(style(fig, 320, f"Premium per exposure unit: {sel}"), use_container_width=True)
         with st.expander("Exposure summary table", expanded=not by):

@@ -26,6 +26,6 @@ rules:
     violation: "tot_wrtn_prm_amt > 0"
   - id: loss_without_claim
     description: Allocated loss should come with a claim count
-    variables: [allocation, claim_ant]
+    variables: [allocation, claim_cnt]
     applies_when: "allocation > 0"
-    violation: "COALESCE(claim_ant, 0) = 0"
+    violation: "COALESCE(claim_cnt, 0) = 0"

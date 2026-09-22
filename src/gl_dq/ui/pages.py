@@ -17,7 +17,8 @@ from gl_dq.summary import filter_clause
 from gl_dq.tracker import build_tracker, snapshots_for
 from gl_dq.ui import state
 from gl_dq.ui.components import preprocessing_editor, status_label, step_summary
-from gl_dq.ui.theme import CATEGORICAL, SEQ_SCALE, STATUS, entity_colors, limit_series, line, style
+from gl_dq.ui.theme import (CATEGORICAL, SEQ_SCALE, STATUS, entity_colors, limit_series, line,
+                            ordered_categories, style)
 
 
 def compact(v: float) -> str:
@@ -264,11 +265,14 @@ def summary_page():
         known = None
     enc = dict(color=color, color_discrete_map=entity_colors(plot[color].astype(str), known)) if color \
         else dict(color_discrete_sequence=[CATEGORICAL[0]])
+    # the frame is sorted by premium, so without this the x axis would be too: years out of order
+    orders = ordered_categories(plot, enc, x)
     cols = st.columns(3)
     for col, (y, title, fmt) in zip(cols, [("premium", "Written premium", ",.0f"),
                                            ("policies", "Policies", ",.0f"),
                                            ("records", "Records", ",.0f")]):
-        fig = px.bar(plot, x=x, y=y, barmode="group", hover_data={y: f":{fmt}"}, labels={y: ""}, **enc)
+        fig = px.bar(plot, x=x, y=y, barmode="group", hover_data={y: f":{fmt}"}, labels={y: ""},
+                     category_orders=orders, **enc)
         fig.update_layout(showlegend=bool(color))
         col.plotly_chart(style(fig, 300, title), use_container_width=True)
 

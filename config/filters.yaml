@@ -45,35 +45,36 @@ filters:
 
   # Rules the pickers cannot express: they ask a question about another dataset, not about the row.
   #
-  # {{ pco_ids_source }} is a profile sql_var (config/profiles/*.yaml), so the same rule works
+  # {{ no_pco_ids_source }} is a profile sql_var (config/profiles/*.yaml), so the same rule works
   # everywhere the list is spelled differently:
-  #   parquet / duckdb   read_csv_auto('data/reference/pco_ids.csv')          - read in place
-  #   prod / workspace   read_files('/Volumes/.../reference/pco_ids.csv', format => 'csv', header => true)
-  #                      or just a table name once the CSV is loaded: my_catalog.my_schema.pco_ids
-  # The CSV needs a header row and a gl_bop_id column; anything else in it is ignored. Both sides are
-  # cast to string, so a CSV (always text) matches a numeric id column. A PCO row whose gl_bop_id is
-  # null cannot be checked against the list and is dropped. Note a blank line in a CSV comes back as
-  # NULL, not as an empty string, so a genuinely blank id cannot be listed this way.
-  - key: pco_without_pco_business
-    label: Drop ProductsCompletedOps rows for ids that do not write PCO business
+  #   parquet / duckdb   read_csv_auto('data/reference/gl_bop_id_not_rating_pco.csv')   - read in place
+  #   prod / workspace   read_files('/Volumes/.../reference/gl_bop_id_not_rating_pco.csv',
+  #                                 format => 'csv', header => true)
+  #                      or a table name once the CSV is loaded: my_catalog.my_schema.gl_bop_id_not_rating_pco
+  # The CSV lists the ids that do NOT rate products/completed-ops, needs a header row and a
+  # gl_bop_id column; anything else in it is ignored. Both sides are cast to string, so a CSV
+  # (always text) matches a numeric id column. A PCO row whose gl_bop_id is null cannot be checked
+  # against the list and is dropped. Note a blank line in a CSV comes back as NULL, not as an empty
+  # string, so a genuinely blank id cannot be listed this way.
+  - key: pco_rows_for_ids_not_rating_pco
+    label: Drop ProductsCompletedOps rows for ids that do not rate PCO
     description: >
-      A gl_bop_id that is not on the products/completed-ops list should not carry a
-      ProductsCompletedOps coverage row - those are mapping artefacts, not exposure.
-      The list of ids that do write PCO business is maintained outside the pipeline.
+      A gl_bop_id on the "not rating PCO" list should not carry a ProductsCompletedOps coverage
+      row - those are mapping artefacts, not exposure. The list is maintained outside the pipeline.
     enabled: false
     profiles: [prod, workspace, parquet]
     expr: |
       NOT (covg_type_desc = 'ProductsCompletedOps'
-           AND CAST(gl_bop_id AS STRING) NOT IN (SELECT CAST(gl_bop_id AS STRING)
-                                                 FROM {{ pco_ids_source }}
-                                                 WHERE gl_bop_id IS NOT NULL))
+           AND CAST(gl_bop_id AS STRING) IN (SELECT CAST(gl_bop_id AS STRING)
+                                             FROM {{ no_pco_ids_source }}
+                                             WHERE gl_bop_id IS NOT NULL))
 
   # The same question answered from the data itself, when there is no reference list to maintain:
   # an id writes PCO business if it has PCO premium anywhere in the table. {{ raw_table }} is the
   # UNFILTERED table - a rule that queries the table must use it, or it defines itself.
   - key: pco_without_pco_premium
     label: Drop ProductsCompletedOps rows for ids with no PCO premium in the data
-    description: Same intent as pco_without_pco_business, derived from the table instead of a list.
+    description: Same intent as pco_rows_for_ids_not_rating_pco, derived from the table instead of a list.
     enabled: false
     profiles: [prod, workspace, parquet]
     expr: |

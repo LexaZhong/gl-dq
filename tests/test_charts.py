@@ -69,3 +69,38 @@ def test_colours_do_not_repaint_when_values_are_filtered_out():
     assert len(set(full.values())) == len(domain)          # distinct hues
     # without a domain the assignment follows whatever happens to be present (the bug this guards)
     assert entity_colors(["Premises/Operations", "Liquor Liability"])["Premises/Operations"] != full["Premises/Operations"]
+
+
+def test_axis_stays_chronological_when_a_series_starts_late():
+    """plotly orders a category axis by first appearance, and series_encoding casts levels to text:
+    a source that only starts writing in 2021 would otherwise put 2021 before 2018."""
+    import plotly.express as px
+
+    from gl_dq.ui.theme import ordered_categories, series_encoding
+
+    view = pd.DataFrame({"src": ["BMQ"] * 4 + ["BOP"] * 7,
+                         "pol_yr": [2021, 2022, 2023, 2024] + [2018, 2019, 2020, 2021, 2022, 2023, 2024],
+                         "exposure": range(11)})
+    enc = series_encoding(view, "src", ["BOP", "BMQ", "CMQ"], ["src", "pol_yr"])
+
+    bad = px.bar(view, x="pol_yr", y="exposure", barmode="group", **enc)
+    assert _x_order(bad) == ["2021", "2022", "2023", "2024", "2018", "2019", "2020"]  # the bug
+
+    good = px.bar(view, x="pol_yr", y="exposure", barmode="group",
+                  category_orders=ordered_categories(view, enc, "pol_yr"), **enc)
+    assert good.layout.xaxis.categoryarray == ("2018", "2019", "2020", "2021", "2022", "2023", "2024")
+    assert _x_order(good) == ["2021", "2022", "2023", "2024", "2018", "2019", "2020"]  # trace data unchanged
+
+
+def _x_order(fig):
+    return list(dict.fromkeys(str(x) for tr in fig.data for x in tr.x))
+
+
+def test_exposure_charts_order_their_levels(ctx_injected):
+    """The rendered exposure charts must pin the axis order, not rely on the frame."""
+    import inspect
+
+    from gl_dq.checks.exposure import Exposure
+
+    src = inspect.getsource(Exposure.render)
+    assert src.count("category_orders=orders") == 2, "both exposure charts need a pinned axis order"

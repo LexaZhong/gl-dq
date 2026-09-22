@@ -4,7 +4,7 @@ segments: [src]
 time_dim: loss_yr            # derived: year(evt_dt)
 sot_query: sql/sot_loss.sql
 sot_loss_col: allocation
-sot_claim_count_col: claim_ant
+sot_claim_count_col: claim_cnt
 dim_map: {}
 tolerance_loss: {abs: 5000, pct: 0.02}
 tolerance_claims: {abs: 5, pct: 0.02}

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
-from gl_dq.core.results import _fmt, segment_key
+from gl_dq.core.results import _fmt, segment_key, sort_segments
 
 
 class Tolerance(BaseModel):
@@ -100,6 +100,8 @@ def render_recon(st, rec: pd.DataFrame, dims: list[str], title: str, key: str):
                   + (" ⚠" if st_ == "fail" else "")
                   for v, pr, st_ in zip(h["pct_diff"], h["presence"], h["status"])]
     z = h.pivot(index="row", columns=col, values="pct_diff")
+    # pivot orders columns as text: 2018..2024 survives that, 1000000 vs 500000 does not
+    z = z[sort_segments(z.columns)]
     text = h.pivot(index="row", columns=col, values="label").reindex_like(z).fillna("")
     both = h.loc[h["presence"] == "both", "pct_diff"].abs()
     lim = max(0.05, float(both.quantile(0.9)) if len(both) else 0.05)

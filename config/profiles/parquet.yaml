@@ -24,7 +24,7 @@ sql_vars:
   study_to: ${DQ_STUDY_TO:-2025-12-31}
   # DuckDB reads the reference CSV in place (no import step). Absolute path or relative to where
   # you launched the app; a folder or *.csv glob works too.
-  pco_ids_source: "read_csv_auto('${DQ_PCO_IDS_CSV:-data/reference/pco_ids.csv}')"
+  no_pco_ids_source: "read_csv_auto('${DQ_NO_PCO_IDS_CSV:-data/reference/gl_bop_id_not_rating_pco.csv}')"
 
 # The study extract is already aggregated (the output of the prod SOT query), so the SOT query here
 # is a passthrough. Everything else - dims, tolerances, the pipeline-side `where` - is inherited

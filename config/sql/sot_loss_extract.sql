@@ -3,7 +3,7 @@
 -- Used by the `parquet` profile: check_overrides.loss_recon.sot_query
 --
 -- Passthrough, for the same reason as sot_premium_extract.sql: the extract is already the output
--- of sot_loss_prod.sql (src x loss_yr, with allocation and claim_ant), not the raw study table.
+-- of sot_loss_prod.sql (src x loss_yr, with allocation and claim_cnt), not the raw study table.
 --
 -- {{ sot_loss_table }} is the `sot_loss` view (DQ_PARQUET_SOT_LOSS: .parquet or .csv).
 -- ============================================================================

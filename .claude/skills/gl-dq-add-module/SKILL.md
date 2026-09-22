@@ -27,7 +27,7 @@ print({c: t for c, t in ctx.schema.columns.items()})
 print('existing checks:', list(ctx.checks))"
 ```
 Map the user's words to real columns or `project.measures.*` (prefer measures, so the module
-works on every profile, e.g. `measures.claim_count` → `claim_ant`, so a renamed column is a one-line profile change).
+works on every profile, e.g. `measures.claim_count` → `claim_cnt`, so a renamed column is a one-line profile change).
 Derived dims (`pol_yr`, `loss_yr`) come from `derived_columns`. If a needed column doesn't exist,
 stop and tell the user; propose a derived column in the profile instead of raw SQL in code.
 If an existing module already answers it, suggest configuring that one (gl-dq-configure) instead.

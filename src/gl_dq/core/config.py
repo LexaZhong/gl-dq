@@ -19,7 +19,7 @@ class DerivedColumn(BaseModel):
 class Measures(BaseModel):
     written_premium: str = "tot_wrtn_prm_amt"
     loss: str = "allocation"
-    claim_count: str = "claim_ant"
+    claim_count: str = "claim_cnt"
     exposure: str = "expo_amt"
     exposure_base: str = "expn_bs_std"
 

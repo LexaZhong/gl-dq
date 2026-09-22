@@ -34,7 +34,7 @@ class LossRecon(Check):
         time_dim: str = "loss_yr"
         sot_query: str = "sql/sot_loss.sql"
         sot_loss_col: str = "allocation"
-        sot_claim_count_col: str = "claim_ant"
+        sot_claim_count_col: str = "claim_cnt"
         dim_map: dict[str, str] = {}
         where: str | None = None  # pipeline filter, to match what the source of truth covers
         tolerance_loss: Tolerance = Tolerance(abs=5000, pct=0.02)
@@ -127,7 +127,7 @@ class LossRecon(Check):
 
         from gl_dq.ui import state
         from gl_dq.ui.components import status_table
-        from gl_dq.ui.theme import line, series_encoding, style
+        from gl_dq.ui.theme import line, ordered_categories, series_encoding, style
 
         tab_r, tab_a = st.tabs(["Reconciliation vs source of truth", "Severity · frequency · loss ratio"])
         dims = list(dict.fromkeys(self.cfg.segments + [self.cfg.time_dim]))
@@ -178,6 +178,7 @@ class LossRecon(Check):
             fig = px.bar(fq, x="segment" if segs else base, y="frequency", facet_col=base, facet_col_wrap=3,
                          facet_col_spacing=0.07, facet_row_spacing=0.18,
                          hover_data={"claims": ":,", "exposure": ":,.0f"},
+                         category_orders=ordered_categories(fq, enc, "segment" if segs else base, base),
                          **{k: v for k, v in enc.items() if not k.startswith("facet")})
             fig.update_yaxes(matches=None, showticklabels=True)
             fig.update_xaxes(showticklabels=False, title=None)

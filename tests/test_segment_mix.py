@@ -32,7 +32,7 @@ def test_totals_match_the_table(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
     df = chk.profile(["class_cd_std"])
     raw = ctx_injected.db.query(
-        "SELECT COUNT(*) r, SUM(tot_wrtn_prm_amt) p, SUM(claim_ant) c FROM gl_master_synth").iloc[0]
+        "SELECT COUNT(*) r, SUM(tot_wrtn_prm_amt) p, SUM(claim_cnt) c FROM gl_master_synth").iloc[0]
     assert df["records"].sum() == int(raw["r"])
     assert df["premium"].sum() == pytest.approx(float(raw["p"]))
     assert df["claims"].sum() == int(raw["c"])

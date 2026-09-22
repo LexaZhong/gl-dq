@@ -14,7 +14,7 @@ derived_columns:
 measures:
   written_premium: tot_wrtn_prm_amt
   loss: allocation
-  claim_count: claim_ant
+  claim_count: claim_cnt
   exposure: expo_amt
   exposure_base: expn_bs_std
 

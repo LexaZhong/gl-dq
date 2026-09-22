@@ -27,12 +27,12 @@ def test_passes_on_the_synthetic_profile(ctx_injected, tmp_path, capsys):
 
 def test_reports_a_renamed_measure(ctx_injected, tmp_path, capsys):
     prof = _profile(tmp_path, measures={"written_premium": "tot_wrtn_prm_amt", "loss": "allocation",
-                                        "claim_count": "claim_cnt",  # renamed in the table
+                                        "claim_count": "claim_cnt_v2",  # renamed in the table
                                         "exposure": "expo_amt", "exposure_base": "expn_bs_std"})
     with pytest.raises(SystemExit) as e:
         check_setup.main(["--profile", prof])
     assert e.value.code == 1
-    assert "measures: claim_cnt" in capsys.readouterr().out
+    assert "measures: claim_cnt_v2" in capsys.readouterr().out
 
 
 def test_reports_unexpected_sources(ctx_injected, tmp_path, capsys):

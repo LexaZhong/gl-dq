@@ -16,7 +16,7 @@ variables:
   # structural nulls: only measure where the field should be populated
   rsk_loc_id: {applies_when: "src <> 'CMQ'"}
   rsk_itm_id: {applies_when: "src = 'BMQ'"}
-  evt_dt: {warn: 0.0, fail: 0.005, applies_when: "claim_ant > 0"}
+  evt_dt: {warn: 0.0, fail: 0.005, applies_when: "claim_cnt > 0"}
   bi_ded_amt: {applies_when: "csl_ded_amt IS NULL"}
   pd_ded_amt: {applies_when: "csl_ded_amt IS NULL"}
   csl_ded_amt: {applies_when: "bi_ded_amt IS NULL AND pd_ded_amt IS NULL"}
