@@ -71,8 +71,8 @@ def _class_table(rng: np.random.Generator) -> pd.DataFrame:
     base = rng.choice(bases, size=N_CLASSES, p=[EXPO_BASES[b][2] for b in bases])
     weights = 1 / np.arange(1, N_CLASSES + 1) ** 1.1
     return pd.DataFrame({
-        "class1_cd": codes.astype(str),
-        "expn_bs": base,
+        "class_cd_std": codes.astype(str),
+        "expn_bs_std": base,
         "rate_mult": rng.lognormal(0, 0.4, N_CLASSES),
         "weight": weights / weights.sum(),
     })
@@ -151,7 +151,7 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     items["rsk_itm_id"] = pd.array(_group_index(n_items), dtype="Int64")
     items.loc[~items["src"].eq("BMQ"), "rsk_itm_id"] = pd.NA
     items = items.merge(classes.drop(columns="weight"), left_on="cls", right_index=True, how="left")
-    median = items["expn_bs"].map(lambda b: EXPO_BASES[b][0])
+    median = items["expn_bs_std"].map(lambda b: EXPO_BASES[b][0])
     scale = np.where(items["src"].eq("CMQ"), 2.5, 1.0)
     items["expo_unit"] = np.maximum(np.round(
         median * scale * items["seg_expo_mult"] * rng.lognormal(0, 0.9, len(items))
@@ -166,7 +166,7 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     rows["covg_type_desc"] = np.array(covg_names)[covg_idx]
     rows["expo_amt"] = rows["expo_unit"]
 
-    base_rate = rows["expn_bs"].map(lambda b: EXPO_BASES[b][1])
+    base_rate = rows["expn_bs_std"].map(lambda b: EXPO_BASES[b][1])
     state_factor = rows["loc_st_abbr"].map(lambda s: STATES[s][2])
     covg_share = rows["covg_type_desc"].map(lambda c: COVERAGES[c][0])
     ded = rows["csl_ded_amt"].fillna(rows["bi_ded_amt"]).astype(int)
@@ -183,17 +183,17 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     mean_sev = rows["covg_type_desc"].map(lambda c: COVERAGES[c][2]).to_numpy()
     earned = rows["tot_wrtn_prm_amt"] * np.where(rows["src"].eq("CMQ"), 1, 1 - rows["unearned"])
     lam = np.clip(earned * lr / mean_sev, 0, None)
-    claim_alloc = rng.poisson(lam)
-    claim_row = np.repeat(np.arange(len(rows)), claim_alloc)
+    claim_ant = rng.poisson(lam)
+    claim_row = np.repeat(np.arange(len(rows)), claim_ant)
     sigma = 1.2
     sev = rng.lognormal(np.log(mean_sev[claim_row]) - sigma**2 / 2, sigma)
     tail = rng.random(len(sev)) < 0.03
     sev[tail] *= rng.pareto(1.8, tail.sum()) + 1
-    rows["claim_alloc"] = claim_alloc
+    rows["claim_ant"] = claim_ant
     rows["allocation"] = np.round(np.bincount(claim_row, weights=sev, minlength=len(rows)), 2)
     span = (rows["pol_exp_dt"] - rows["pol_eff_dt"]).dt.days.to_numpy()
     offset = (rng.random(len(rows)) * span).astype(int)
-    rows["evt_dt"] = (rows["pol_eff_dt"] + pd.to_timedelta(offset, unit="D")).where(claim_alloc > 0)
+    rows["evt_dt"] = (rows["pol_eff_dt"] + pd.to_timedelta(offset, unit="D")).where(claim_ant > 0)
 
     # --- endorsement and cancellation rows (BOP/BMQ) ------------------------
     not_cmq = ~rows["src"].eq("CMQ")
@@ -207,18 +207,18 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     canc["tot_wrtn_prm_amt"] = np.round(-canc["gross"] * canc["unearned"], 2)
     canc["expo_amt"] = 0.0
     for extra in (endo, canc):
-        extra["claim_alloc"] = 0
+        extra["claim_ant"] = 0
         extra["allocation"] = 0.0
         extra["evt_dt"] = pd.NaT
 
     out = pd.concat([rows, endo, canc], ignore_index=True)
-    cols = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class1_cd", "expo_amt",
-            "expn_bs", "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "trr_cd", "mm_seg_cd",
+    cols = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class_cd_std", "expo_amt",
+            "expn_bs_std", "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "trr_cd", "mm_seg_cd",
             "each_occ_lmt_amt", "genl_ag_lmt_amt", "tot_wrtn_prm_amt",
             "pol_stat", "bi_ded_amt", "pd_ded_amt", "csl_ded_amt", "tx_type_nm", "allocation",
-            "claim_alloc", "evt_dt"]
+            "claim_ant", "evt_dt"]
     out = out[cols].sort_values(["src", "pol_num", "rsk_loc_id", "rsk_itm_id", "covg_type_desc"]).reset_index(drop=True)
-    out["class1_cd"] = out["class1_cd"].astype("object")
+    out["class_cd_std"] = out["class_cd_std"].astype("object")
     return out
 
 
@@ -228,7 +228,7 @@ def build_sot(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
               .rename(columns={"tot_wrtn_prm_amt": "wrtn_prm"}))
     claims = df[df["evt_dt"].notna()]
     loss = (claims.assign(loss_yr=claims["evt_dt"].dt.year)
-                  .groupby(["src", "covg_type_desc", "loss_yr"], as_index=False)[["allocation", "claim_alloc"]].sum())
+                  .groupby(["src", "covg_type_desc", "loss_yr"], as_index=False)[["allocation", "claim_ant"]].sum())
     return prem, loss
 
 
@@ -244,26 +244,26 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     df = df[~(df["src"].eq("BOP") & pol_yr.eq(2020) & df["covg_type_desc"].eq("Medical Payments"))].copy()
     loss_yr = df["evt_dt"].dt.year
     df.loc[df["src"].eq("BOP") & loss_yr.eq(2021), "allocation"] *= 0.95
-    df.loc[df["src"].eq("BMQ") & loss_yr.eq(2022), "claim_alloc"] *= 2
+    df.loc[df["src"].eq("BMQ") & loss_yr.eq(2022), "claim_ant"] *= 2
     pol_yr = df["pol_eff_dt"].dt.year
 
     # key issues
-    bmq_nc = df.index[df["src"].eq("BMQ") & df["claim_alloc"].eq(0)]
+    bmq_nc = df.index[df["src"].eq("BMQ") & df["claim_ant"].eq(0)]
     dups = df.loc[pick(bmq_nc, int(0.005 * df["src"].eq("BMQ").sum()))]
     cmq = df[df["src"].eq("CMQ")]
-    multi = cmq.groupby("pol_num")["class1_cd"].nunique()
+    multi = cmq.groupby("pol_num")["class_cd_std"].nunique()
     multi_pols = pick(multi.index[multi > 1], max(1, int(0.01 * len(multi))))
-    df.loc[df["pol_num"].isin(multi_pols), "class1_cd"] = ""
+    df.loc[df["pol_num"].isin(multi_pols), "class_cd_std"] = ""
 
     # missing issues
     cmq_idx = df.index[df["src"].eq("CMQ")]
-    df.loc[pick(cmq_idx, int(0.12 * len(cmq_idx))), "class1_cd"] = None
+    df.loc[pick(cmq_idx, int(0.12 * len(cmq_idx))), "class_cd_std"] = None
     bop_idx = df.index[df["src"].eq("BOP")]
     df.loc[pick(bop_idx, int(0.03 * len(bop_idx))), "loc_zipcd"] = ""
     bmq_idx = df.index[df["src"].eq("BMQ")]
-    df.loc[pick(bmq_idx, int(0.02 * len(bmq_idx))), "expn_bs"] = "UNK"
-    small_claims = df.index[(df["claim_alloc"] > 0) & (df["allocation"] < df.loc[df["claim_alloc"] > 0, "allocation"].median())]
-    df.loc[pick(small_claims, int(0.01 * (df["claim_alloc"] > 0).sum())), "evt_dt"] = pd.NaT
+    df.loc[pick(bmq_idx, int(0.02 * len(bmq_idx))), "expn_bs_std"] = "UNK"
+    small_claims = df.index[(df["claim_ant"] > 0) & (df["allocation"] < df.loc[df["claim_ant"] > 0, "allocation"].median())]
+    df.loc[pick(small_claims, int(0.01 * (df["claim_ant"] > 0).sum())), "evt_dt"] = pd.NaT
 
     # distribution issues
     df.loc[df["src"].eq("BMQ") & pol_yr.eq(2019), "tot_wrtn_prm_amt"] *= 100
@@ -272,8 +272,8 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     df.loc[neg, "expo_amt"] = -df.loc[neg, "expo_amt"]
     not_bmq19 = df.index[~(df["src"].eq("BMQ") & pol_yr.eq(2019)) & (df["tot_wrtn_prm_amt"] > 0)]
     df.loc[pick(not_bmq19, 10), "tot_wrtn_prm_amt"] *= 1000
-    yr23 = df.index[pol_yr.eq(2023) & df["class1_cd"].notna() & df["class1_cd"].ne("")]
-    df.loc[pick(yr23, int(0.02 * pol_yr.eq(2023).sum())), "class1_cd"] = "99999"
+    yr23 = df.index[pol_yr.eq(2023) & df["class_cd_std"].notna() & df["class_cd_std"].ne("")]
+    df.loc[pick(yr23, int(0.02 * pol_yr.eq(2023).sum())), "class_cd_std"] = "99999"
 
     # value issues: a limit value only one source uses, and a deductible sentinel
     bmq_idx = df.index[df["src"].eq("BMQ")]
@@ -282,11 +282,11 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     df.loc[pick(bop_ded, int(0.015 * len(bop_ded))), "bi_ded_amt"] = 99_999.0
 
     # exposure issues
-    top_class = df["class1_cd"].value_counts().index[0]
-    top_rows = df.index[df["class1_cd"].eq(top_class)]
-    current = df.loc[top_rows[0], "expn_bs"]
+    top_class = df["class_cd_std"].value_counts().index[0]
+    top_rows = df.index[df["class_cd_std"].eq(top_class)]
+    current = df.loc[top_rows[0], "expn_bs_std"]
     other = next(b for b in EXPO_BASES if b != current)
-    df.loc[pick(top_rows, int(0.3 * len(top_rows))), "expn_bs"] = other
+    df.loc[pick(top_rows, int(0.3 * len(top_rows))), "expn_bs_std"] = other
     pos_prem = df.index[(df["tot_wrtn_prm_amt"] > 0) & (df["expo_amt"] > 0)]
     df.loc[pick(pos_prem, 50), "expo_amt"] = 0.0
 
@@ -294,8 +294,8 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     bad_pols = pick(df["pol_num"].unique(), 15)
     m = df["pol_num"].isin(bad_pols)
     df.loc[m, "pol_exp_dt"] = df.loc[m, "pol_eff_dt"] - pd.Timedelta(days=30)
-    late_eff = df.index[(df["claim_alloc"] > 0) & df["evt_dt"].notna() & (df["pol_eff_dt"].dt.dayofyear > 40)
-                        & (df["allocation"] < df.loc[df["claim_alloc"] > 0, "allocation"].median())
+    late_eff = df.index[(df["claim_ant"] > 0) & df["evt_dt"].notna() & (df["pol_eff_dt"].dt.dayofyear > 40)
+                        & (df["allocation"] < df.loc[df["claim_ant"] > 0, "allocation"].median())
                         & ~m]
     ev = pick(late_eff, 25)
     df.loc[ev, "evt_dt"] = df.loc[ev, "pol_eff_dt"] - pd.Timedelta(days=20)

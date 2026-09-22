@@ -34,8 +34,12 @@ def configured_columns(ctx) -> dict[str, list[str]]:
             continue
         cols: list[str] = []
         d = cfg.model_dump()
-        for field in ("group_by", "dims", "segments", "summary_by", "anomaly_by", "include", "exclude"):
+        for field in ("group_by", "dims", "segments", "summary_by", "anomaly_by", "include", "exclude",
+                      "dimensions"):  # dimensions: segment_mix rating dimensions
             cols += [c for c in (d.get(field) or []) if isinstance(c, str)]
+        for field in ("categorical", "numeric"):  # value_checks: one entry per column
+            cols += [c for c in (d.get(field) or {}) if isinstance(c, str)]
+        cols += [d[f] for f in ("default_dimension", "time_dim", "lr_basis") if isinstance(d.get(f), str)]
         for k in (d.get("candidate_keys") or {}).values():
             cols += k
         cols += list((d.get("variables") or {}).keys()) if isinstance(d.get("variables"), dict) else \

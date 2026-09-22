@@ -61,16 +61,16 @@ def test_handoff_path_with_and_without_signoff(wf):
 
 
 def test_status_log_assignees_notes(store, wf):
-    store.update("expn_bs", "ds@co.com", workflow=wf, status="investigating", assignees={"ds": "ds@co.com"},
+    store.update("expn_bs_std", "ds@co.com", workflow=wf, status="investigating", assignees={"ds": "ds@co.com"},
                  note=Note(author="ds@co.com", text="UNK = unmapped legacy BMQ base", src="BMQ", tags=["mapping"]))
-    store.update("expn_bs", "act@co.com", workflow=wf, status="actuary_review", assignees={"actuary": "act@co.com"})
-    rec = store.update("expn_bs", "ds@co.com", workflow=wf, status="with_de", assignees={"de": "de@co.com", "ds": ""})
+    store.update("expn_bs_std", "act@co.com", workflow=wf, status="actuary_review", assignees={"actuary": "act@co.com"})
+    rec = store.update("expn_bs_std", "ds@co.com", workflow=wf, status="with_de", assignees={"de": "de@co.com", "ds": ""})
     assert rec.status == "with_de" and rec.assignees == {"actuary": "act@co.com", "de": "de@co.com"}
     assert [c.to_status for c in rec.status_log] == ["investigating", "actuary_review", "with_de"]
     assert rec.status_log[-1].from_status == "actuary_review"
-    assert len(store.history("expn_bs")) == 3
+    assert len(store.history("expn_bs_std")) == 3
     with pytest.raises(ValueError):
-        store.update("expn_bs", "x", workflow=wf, status="not_a_stage")
+        store.update("expn_bs_std", "x", workflow=wf, status="not_a_stage")
 
 
 def test_closing_stores_snapshots(store, wf):
@@ -84,18 +84,18 @@ def test_closing_stores_snapshots(store, wf):
 def test_preprocessing_steps_and_spec(store, wf):
     step = PreprocessingStep(op="map_values", params={"mapping": parse_mapping("UNK=null, X=Y")}, sources=["BMQ"],
                              rationale="UNK is an unmapped legacy base", author="ds")
-    rec = store.add_preprocessing_step("expn_bs", step, "ds", set_status="preprocess_in_modeling")
+    rec = store.add_preprocessing_step("expn_bs_std", step, "ds", set_status="preprocess_in_modeling")
     assert rec.status == "preprocess_in_modeling" and rec.status_log[-1].comment
-    store.add_preprocessing_step("expn_bs", PreprocessingStep(op="impute", params={"strategy": "mode"}), "ds")
+    store.add_preprocessing_step("expn_bs_std", PreprocessingStep(op="impute", params={"strategy": "mode"}), "ds")
     store.update("loc_zipcd", "ds", workflow=wf, status="preprocess_in_modeling")  # no steps yet
     store.update("pol_num", "ds", workflow=wf, status="resolved")
     spec = preprocessing_spec(store.all(), wf, "gl_master")
-    assert set(spec["variables"]) == {"expn_bs", "loc_zipcd"}
-    steps = spec["variables"]["expn_bs"]["steps"]
+    assert set(spec["variables"]) == {"expn_bs_std", "loc_zipcd"}
+    steps = spec["variables"]["expn_bs_std"]["steps"]
     assert [s["op"] for s in steps] == ["map_values", "impute"] and steps[0]["params"]["mapping"] == {"UNK": None, "X": "Y"}
     assert steps[1]["sources"] == "all" and spec["variables"]["loc_zipcd"]["steps"] == []
-    store.remove_preprocessing_step("expn_bs", 0, "ds")
-    assert [s.op for s in store.get("expn_bs")[0].preprocessing] == ["impute"]
+    store.remove_preprocessing_step("expn_bs_std", 0, "ds")
+    assert [s.op for s in store.get("expn_bs_std")[0].preprocessing] == ["impute"]
     md = export_markdown(store.all(), wf)
     assert "Recommended preprocessing" in md and "`impute`" in md
 

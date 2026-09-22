@@ -126,7 +126,7 @@ display(summarize(ctx, ["src", "covg_type_desc"]))  # noqa: F821
 # COMMAND ----------
 # from gl_dq.core.knowledge import Note
 # from gl_dq.tracker import snapshots_for
-# ctx.knowledge.update("expn_bs", "you@company.com", workflow=ctx.workflow, status="investigating",
+# ctx.knowledge.update("expn_bs_std", "you@company.com", workflow=ctx.workflow, status="investigating",
 #                      assignees={"ds": "you@company.com"},
 #                      note=Note(author="you@company.com", text="UNK is an unmapped legacy base", src="BMQ"),
-#                      snapshots=snapshots_for("expn_bs", ctx.results.latest()))
+#                      snapshots=snapshots_for("expn_bs_std", ctx.results.latest()))

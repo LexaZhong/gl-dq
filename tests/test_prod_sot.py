@@ -19,9 +19,9 @@ from gl_dq.core.storage import LocalStorage
 from gl_dq.core.workflow import Workflow
 
 ROOT = Path(__file__).resolve().parents[1]
-COLUMNS = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class1_cd", "expo_amt", "expn_bs",
+COLUMNS = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class_cd_std", "expo_amt", "expn_bs_std",
            "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "tot_wrtn_prm_amt", "pol_stat", "bi_ded_amt",
-           "pd_ded_amt", "csl_ded_amt", "tx_type_nm", "allocation", "claim_alloc", "evt_dt"]
+           "pd_ded_amt", "csl_ded_amt", "tx_type_nm", "allocation", "claim_ant", "evt_dt"]
 
 
 class FakeDB:

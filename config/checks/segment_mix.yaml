@@ -2,8 +2,8 @@ enabled: true
 order: 80
 category: Portfolio analysis
 # ISO rating dimensions: where the premium sits, and whether each cell has enough claims to price.
-dimensions: [class1_cd, trr_cd, each_occ_lmt_amt, genl_ag_lmt_amt, bi_ded_amt, pd_ded_amt, csl_ded_amt]
-default_dimension: class1_cd
+dimensions: [class_cd_std, trr_cd, each_occ_lmt_amt, genl_ag_lmt_amt, bi_ded_amt, pd_ded_amt, csl_ded_amt]
+default_dimension: class_cd_std
 split_by_source: false
 full_credibility: 1082      # claims for full credibility (square-root rule, +/-5% at 90%)
 top_n: 25

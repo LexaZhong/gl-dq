@@ -2,7 +2,7 @@ enabled: true
 order: 60
 summary_by: [src, pol_yr]
 anomaly_by: [src]
-class_col: class1_cd
+class_col: class_cd_std
 exclude_bases: ['', UNK]
 negative: {warn: 0.0, fail: 0.001}
 zero_expo_pos_prem: {warn: 0.0, fail: 0.001}

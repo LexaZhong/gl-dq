@@ -28,7 +28,7 @@ def test_passes_on_the_synthetic_profile(ctx_injected, tmp_path, capsys):
 def test_reports_a_renamed_measure(ctx_injected, tmp_path, capsys):
     prof = _profile(tmp_path, measures={"written_premium": "tot_wrtn_prm_amt", "loss": "allocation",
                                         "claim_count": "claim_cnt",  # renamed in the table
-                                        "exposure": "expo_amt", "exposure_base": "expn_bs"})
+                                        "exposure": "expo_amt", "exposure_base": "expn_bs_std"})
     with pytest.raises(SystemExit) as e:
         check_setup.main(["--profile", prof])
     assert e.value.code == 1
@@ -135,6 +135,19 @@ def test_non_ascii_round_trips_through_storage(tmp_path):
     from gl_dq.core.storage import LocalStorage
 
     store = KnowledgeStore(LocalStorage(tmp_path))
-    store.add_note("expn_bs", Note(author="actuaire@co.com", text="Prime non alignée — écart de 3 % · 100°"))
-    assert "écart de 3 %" in store.get("expn_bs")[0].notes[0].text
-    assert "écart" in (tmp_path / "variables" / "expn_bs.yaml").read_text(encoding="utf-8")
+    store.add_note("expn_bs_std", Note(author="actuaire@co.com", text="Prime non alignée — écart de 3 % · 100°"))
+    assert "écart de 3 %" in store.get("expn_bs_std")[0].notes[0].text
+    assert "écart" in (tmp_path / "variables" / "expn_bs_std.yaml").read_text(encoding="utf-8")
+
+
+def test_every_column_a_check_config_names_is_checked(ctx_injected):
+    """Preflight is how a column rename gets caught, so it has to look at every config field that
+    holds a column name - including the ones added later (segment_mix dimensions, value_checks)."""
+    cols = check_setup.configured_columns(ctx_injected)
+    assert set(ctx_injected.check_config("segment_mix").dimensions) <= set(cols["segment_mix"])
+    vc = ctx_injected.check_config("value_checks")
+    assert set(vc.categorical) | set(vc.numeric) <= set(cols["value_checks"])
+    assert ctx_injected.check_config("loss_recon").time_dim in cols["loss_recon"]
+    for name, names in cols.items():
+        for c in names:
+            assert ctx_injected.schema.has(c), f"{name} references {c}, which is not in the table"

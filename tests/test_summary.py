@@ -57,7 +57,7 @@ def test_distinct_values_for_the_filter_picker(ctx_injected):
     covg = distinct_values(ctx_injected, "covg_type_desc")
     assert "Liquor Liability" in covg and covg == sorted(covg)
     # a column with nulls offers them last, as an explicit choice
-    classes = distinct_values(ctx_injected, "class1_cd")
+    classes = distinct_values(ctx_injected, "class_cd_std")
     assert classes[-1] == "<null>" and len(classes) > 10
 
 
@@ -70,9 +70,9 @@ def test_filter_clause_sql(ctx_injected):
     assert one == """(CAST("src" AS STRING) IN ('BOP'))"""
     two = filter_clause(ctx_injected, {"src": ["BOP", "BMQ"], "covg_type_desc": ["Liquor Liability"]})
     assert two.count(" AND ") == 1 and "'BMQ'" in two and "'Liquor Liability'" in two
-    nulls = filter_clause(ctx_injected, {"class1_cd": ["<null>"]})
-    assert nulls == """("class1_cd" IS NULL)"""
-    both = filter_clause(ctx_injected, {"class1_cd": ["10010", "<null>"]})
+    nulls = filter_clause(ctx_injected, {"class_cd_std": ["<null>"]})
+    assert nulls == """("class_cd_std" IS NULL)"""
+    both = filter_clause(ctx_injected, {"class_cd_std": ["10010", "<null>"]})
     assert "IS NULL" in both and "'10010'" in both and " OR " in both
 
 

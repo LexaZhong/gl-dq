@@ -1,6 +1,6 @@
 ---
 name: gl-dq-knowledge
-description: Search, summarize, export or reuse the gl_dq knowledge base (per-column workflow stage, assignees, notes and recommended preprocessing, stored as YAML in the UC Volume or data/knowledge). Use for "what do we know about expn_bs", "how many columns are left", "what is waiting on DE", "export the data dictionary / preprocessing spec", "reuse notes from gl_master for property_master", or progress reports for a business lead.
+description: Search, summarize, export or reuse the gl_dq knowledge base (per-column workflow stage, assignees, notes and recommended preprocessing, stored as YAML in the UC Volume or data/knowledge). Use for "what do we know about expn_bs_std", "how many columns are left", "what is waiting on DE", "export the data dictionary / preprocessing spec", "reuse notes from gl_master for property_master", or progress reports for a business lead.
 ---
 
 # Knowledge base

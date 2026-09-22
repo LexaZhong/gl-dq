@@ -3,8 +3,8 @@ order: 10
 candidate_keys:
   BOP: [pol_num, pol_eff_dt, rsk_loc_id, covg_type_desc, tx_type_nm]
   BMQ: [pol_num, pol_eff_dt, rsk_loc_id, rsk_itm_id, covg_type_desc, tx_type_nm]
-  CMQ: [pol_num, pol_eff_dt, covg_type_desc, class1_cd]
-  _all: [src, pol_num, pol_eff_dt, rsk_loc_id, rsk_itm_id, covg_type_desc, class1_cd, tx_type_nm]
+  CMQ: [pol_num, pol_eff_dt, covg_type_desc, class_cd_std]
+  _all: [src, pol_num, pol_eff_dt, rsk_loc_id, rsk_itm_id, covg_type_desc, class_cd_std, tx_type_nm]
 warn_dup_rate: 0.0
 fail_dup_rate: 0.001
 sample_limit: 50

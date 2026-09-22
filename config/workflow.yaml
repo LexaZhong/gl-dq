@@ -85,7 +85,7 @@ preprocessing_ops:
         help: Add a <column>_missing flag
       group_by:
         type: list
-        help: Impute within groups, e.g. src, class1_cd
+        help: Impute within groups, e.g. src, class_cd_std
   map_values:
     label: Map / recode values
     description: Recode sentinel or legacy values

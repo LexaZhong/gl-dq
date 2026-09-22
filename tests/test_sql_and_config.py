@@ -52,7 +52,7 @@ def test_prod_profile_parses(monkeypatch):
     assert p.config_dir.endswith("/gl_master_cleaning/config")
     assert p.sql_vars["sot_premium_table"] == "cimm_csm.premium_transx_seg_enriched_2026q2"  # the pricing study
     assert p.sql_vars["study_from"] == "2014-01-01" and p.sql_vars["study_to"] == "2025-12-31"
-    assert p.measures.claim_count == "claim_alloc"
+    assert p.measures.claim_count == "claim_ant"
     monkeypatch.setenv("DQ_SOT_PREMIUM_TABLE", "other.study.table")  # still overridable per environment
     assert load_project("prod").sql_vars["sot_premium_table"] == "other.study.table"
 

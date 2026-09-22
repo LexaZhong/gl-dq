@@ -57,8 +57,8 @@ def test_segment_where_quotes_values_and_whitelists_columns(ctx_injected):
     s, d = ctx_injected.schema, ctx_injected.dialect
     assert segment_where(s, d, {"src": "BOP"}) == '"src" = \'BOP\''
     assert segment_where(s, d, {"src": "BOP", "pol_yr": 2019}) == '"src" = \'BOP\' AND (year(pol_eff_dt)) = 2019'
-    assert segment_where(s, d, {"class1_cd": None}).endswith("IS NULL")
-    assert segment_where(s, d, {"class1_cd": "<null>"}).endswith("IS NULL")
+    assert segment_where(s, d, {"class_cd_std": None}).endswith("IS NULL")
+    assert segment_where(s, d, {"class_cd_std": "<null>"}).endswith("IS NULL")
     assert segment_where(s, d, {"src": "O'Brien"}) == '"src" = \'O\'\'Brien\''
     assert segment_where(s, d, {"each_occ_lmt_amt": np.int64(1000000)}) == '"each_occ_lmt_amt" = 1000000'
     with pytest.raises(UnknownColumnError):
@@ -81,7 +81,7 @@ def detail(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
     where = segment_where(chk.schema, chk.ctx.dialect, {"src": "BOP"})
     base = ctx_injected.db.query(
-        "SELECT expn_bs FROM gl_master_synth GROUP BY 1 ORDER BY SUM(tot_wrtn_prm_amt) DESC LIMIT 1").iloc[0]["expn_bs"]
+        "SELECT expn_bs_std FROM gl_master_synth GROUP BY 1 ORDER BY SUM(tot_wrtn_prm_amt) DESC LIMIT 1").iloc[0]["expn_bs_std"]
     return chk, where, str(base)
 
 

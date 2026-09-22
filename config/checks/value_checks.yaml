@@ -4,7 +4,7 @@ order: 27
 # difference rather than a real one.
 categorical:
   covg_type_desc: {}
-  expn_bs: {}
+  expn_bs_std: {}
   mm_seg_cd: {}
   each_occ_lmt_amt: {}
   genl_ag_lmt_amt: {}
@@ -18,7 +18,7 @@ numeric:
   # cross-source median comparison would flag real structure
   expo_amt: {min: 0, max: 100000000, allow_negative: false, compare_medians: false}
   allocation: {min: 0, max: 50000000, allow_negative: false}
-  claim_alloc: {min: 0, max: 500, allow_negative: false}
+  claim_ant: {min: 0, max: 500, allow_negative: false}
   each_occ_lmt_amt: {min: 25000, max: 5000000, discrete: true, top_value_warn: 0.8}
   genl_ag_lmt_amt: {min: 25000, max: 10000000, discrete: true, top_value_warn: 0.8}
   bi_ded_amt: {min: 0, max: 25000, discrete: true, top_value_warn: 0.8}

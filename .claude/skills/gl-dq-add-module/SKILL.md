@@ -1,6 +1,6 @@
 ---
 name: gl-dq-add-module
-description: Add a complete new check module (page) to the gl_dq data cleaning dashboard from a plain-English request, e.g. "add a module that checks written premium per policy by state" or "add a page comparing exposure per claim by expn_bs". Creates the Check class, SQL template, YAML config and tests, then verifies them against the data. Use whenever someone wants a new check, page, summary or validation in the tracker.
+description: Add a complete new check module (page) to the gl_dq data cleaning dashboard from a plain-English request, e.g. "add a module that checks written premium per policy by state" or "add a page comparing exposure per claim by expn_bs_std". Creates the Check class, SQL template, YAML config and tests, then verifies them against the data. Use whenever someone wants a new check, page, summary or validation in the tracker.
 ---
 
 # Add a gl_dq check module
@@ -27,7 +27,7 @@ print({c: t for c, t in ctx.schema.columns.items()})
 print('existing checks:', list(ctx.checks))"
 ```
 Map the user's words to real columns or `project.measures.*` (prefer measures, so the module
-works on every profile, e.g. `measures.claim_count` → `claim_alloc`, so a renamed column is a one-line profile change).
+works on every profile, e.g. `measures.claim_count` → `claim_ant`, so a renamed column is a one-line profile change).
 Derived dims (`pol_yr`, `loss_yr`) come from `derived_columns`. If a needed column doesn't exist,
 stop and tell the user; propose a derived column in the profile instead of raw SQL in code.
 If an existing module already answers it, suggest configuring that one (gl-dq-configure) instead.

@@ -45,7 +45,7 @@ def _scalar(v):
 
 
 def segment_where(schema, dialect, values: dict) -> str:
-    """SQL predicate for one segment, e.g. `class1_cd` = '16676' AND `trr_cd` = 12.
+    """SQL predicate for one segment, e.g. `class_cd_std` = '16676' AND `trr_cd` = 12.
 
     Every identifier goes through schema.ref (the column whitelist); every value through
     dialect.lit. A null level becomes IS NULL rather than = NULL.
@@ -199,7 +199,7 @@ def _money(v: float) -> str:
 
 
 def _short(segment: str) -> str:
-    """'class1_cd=78838|trr_cd=0101' -> '78838 · 0101' (the dimensions are named by the picker)."""
+    """'class_cd_std=78838|trr_cd=0101' -> '78838 · 0101' (the dimensions are named by the picker)."""
     from gl_dq.core.results import parse_segment
 
     parts = parse_segment(str(segment))

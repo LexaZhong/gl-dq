@@ -92,7 +92,7 @@ def test_distribution_controls(refreshed, monkeypatch):
     at.text_input(key=f"dpc_{name}").input("0.1, 0.5, 0.9").run()
     assert not at.exception, [e.value for e in at.exception]
     # switch to a categorical variable
-    at.selectbox(key="dist_var").set_value("class1_cd").run()
+    at.selectbox(key="dist_var").set_value("class_cd_std").run()
     assert not at.exception, [e.value for e in at.exception]
 
 

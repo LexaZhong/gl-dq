@@ -67,7 +67,7 @@ DEFAULT_OPS = {
         "strategy": ParamSpec(type="select", options=["median", "mean", "mode", "constant", "zero"], default="median"),
         "value": ParamSpec(type="text", help="Only for strategy=constant"),
         "add_indicator": ParamSpec(type="bool", default=True, help="Add a <column>_missing flag"),
-        "group_by": ParamSpec(type="list", help="Impute within groups, e.g. src, class1_cd"),
+        "group_by": ParamSpec(type="list", help="Impute within groups, e.g. src, class_cd_std"),
     }),
     "map_values": PreprocOp(label="Map / recode values", description="Recode sentinel or legacy values", params={
         "mapping": ParamSpec(type="mapping", help="from=to pairs, e.g. UNK=null, 000000=null"),

@@ -200,18 +200,18 @@ def test_expr_can_read_a_reference_csv(ctx_injected, tmp_path):
     csv = tmp_path / "keep_classes.csv"
     # non-blank ids only: a blank line in a CSV reads back as NULL, never as an empty string
     classes = [str(c) for c in ctx_injected.db.query(
-        "SELECT DISTINCT class1_cd FROM gl_master_synth WHERE class1_cd <> '' ORDER BY 1 LIMIT 3")["class1_cd"]]
-    csv.write_text("class1_cd\n" + "\n".join(classes) + "\n", encoding="utf-8")
+        "SELECT DISTINCT class_cd_std FROM gl_master_synth WHERE class_cd_std <> '' ORDER BY 1 LIMIT 3")["class_cd_std"]]
+    csv.write_text("class_cd_std\n" + "\n".join(classes) + "\n", encoding="utf-8")
 
     project = ctx_injected.project.model_copy(
         update={"sql_vars": {**ctx_injected.project.sql_vars,
                              "class_list": f"read_csv_auto('{csv.as_posix()}')"}})
     ctx = replace(ctx_injected, project=project, filters=FilterSet(filters=[Filter(
         key="listed_classes", enabled=True,
-        expr="CAST(class1_cd AS STRING) IN (SELECT CAST(class1_cd AS STRING) FROM {{ class_list }})")]))
+        expr="CAST(class_cd_std AS STRING) IN (SELECT CAST(class_cd_std AS STRING) FROM {{ class_list }})")]))
 
     assert str(csv) in predicate(ctx, ctx.filters.filters[0])
-    got = set(summarize(ctx, ["class1_cd"])["class1_cd"].astype(str))
+    got = set(summarize(ctx, ["class_cd_std"])["class_cd_std"].astype(str))
     assert got == set(classes)                      # exactly the listed ids survive
     assert summarize(ctx, []).iloc[0].records < summarize(ctx_injected, []).iloc[0].records
 

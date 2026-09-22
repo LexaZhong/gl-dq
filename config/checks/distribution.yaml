@@ -23,7 +23,7 @@ variables:
     percentile_bins: [0.5, 0.75, 0.9, 0.95, 0.99, 0.995, 0.999]
     log_scale: {method: log1p, y: true}
     allow_negative: false
-  - name: class1_cd
+  - name: class_cd_std
     type: categorical
     group_by: [pol_yr]
     top_n: 25

@@ -11,20 +11,20 @@ issues:
     expect: {check: key_uniqueness, variable: _key, segment: {src: BMQ}, metric: dup_rate}
 
   - id: key_cmq_blank_class
-    description: Some multi-class CMQ policies have class1_cd blanked, so their key collides.
+    description: Some multi-class CMQ policies have class_cd_std blanked, so their key collides.
     expect: {check: key_uniqueness, variable: _key, segment: {src: CMQ}, metric: dup_rate}
 
   - id: miss_cmq_class_null
-    description: CMQ class1_cd is null on 12% of rows.
-    expect: {check: missing_rate, variable: class1_cd, segment: {src: CMQ}}
+    description: CMQ class_cd_std is null on 12% of rows.
+    expect: {check: missing_rate, variable: class_cd_std, segment: {src: CMQ}}
 
   - id: miss_bop_zip_blank
     description: BOP loc_zipcd is an empty string on 3% of rows.
     expect: {check: missing_rate, variable: loc_zipcd, segment: {src: BOP}}
 
   - id: miss_bmq_expn_unk
-    description: BMQ expn_bs holds the sentinel 'UNK' on 2% of rows.
-    expect: {check: missing_rate, variable: expn_bs, segment: {src: BMQ}}
+    description: BMQ expn_bs_std holds the sentinel 'UNK' on 2% of rows.
+    expect: {check: missing_rate, variable: expn_bs_std, segment: {src: BMQ}}
 
   - id: miss_evt_dt_with_claims
     description: evt_dt is null on 1% of rows that have claims.
@@ -44,7 +44,7 @@ issues:
 
   - id: dist_new_class_2023
     description: New class code 99999 appears only in policy year 2023 (2% of rows).
-    expect: {check: distribution, variable: class1_cd, metric: new_categories, segment: {pol_yr: "2023"}}
+    expect: {check: distribution, variable: class_cd_std, metric: new_categories, segment: {pol_yr: "2023"}}
 
   - id: prem_sot_cmq_liquor
     description: Source of truth CMQ Liquor Liability premium is 3% higher than pipeline.
@@ -72,7 +72,7 @@ issues:
 
   - id: expo_class_mixed_base
     description: The most common class code has 30% of rows on a different exposure base.
-    expect: {check: exposure, variable: expn_bs, metric: n_classes_multi_base}
+    expect: {check: exposure, variable: expn_bs_std, metric: n_classes_multi_base}
 
   - id: expo_zero_positive_prem
     description: 50 rows with zero expo_amt but positive premium.

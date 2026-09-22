@@ -5,7 +5,7 @@
 --   * one column per dimension in loss_recon.yaml -> segments + time_dim
 --     (default: src, loss_yr), named like the pipeline column or mapped in dim_map
 --   * two measure columns named in loss_recon.yaml -> sot_loss_col and sot_claim_count_col
---     (default: allocation, claim_alloc)
+--     (default: allocation, claim_ant)
 --   * loss_yr must be the same basis as the pipeline: year(evt_dt), i.e. accident/event year
 --   * any grain at least as fine as those dimensions - rows are summed
 --
@@ -14,7 +14,7 @@
 -- TODO(prod): replace the query below with the pricing study.
 -- ============================================================================
 
-SELECT src, covg_type_desc, loss_yr, allocation, claim_alloc
+SELECT src, covg_type_desc, loss_yr, allocation, claim_ant
 FROM {{ sot_loss_table }}
 
 -- ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ FROM {{ sot_loss_table }}
 -- 2. Study is valued at a specific date (the pipeline is "as of today"):
 --    reconcile the same valuation, or expect a systematic difference.
 --    SELECT src, YEAR(loss_date) AS loss_yr, SUM(paid + case_reserve) AS allocation,
---           COUNT(DISTINCT claim_nbr) AS claim_alloc
+--           COUNT(DISTINCT claim_nbr) AS claim_ant
 --    FROM pricing.study.gl_claims
 --    WHERE valuation_date = DATE '2026-06-30'
 --    GROUP BY 1, 2

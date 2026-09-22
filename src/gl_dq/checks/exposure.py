@@ -1,4 +1,4 @@
-"""Exposure summary by exposure base (expn_bs), plus exposure sanity checks."""
+"""Exposure summary by exposure base (expn_bs_std), plus exposure sanity checks."""
 from __future__ import annotations
 
 import numpy as np
@@ -22,7 +22,7 @@ class Exposure(Check):
     class Config(CheckConfig):
         summary_by: list[str] = ["src", "pol_yr"]  # always also split by exposure base
         anomaly_by: list[str] = ["src"]
-        class_col: str = "class1_cd"
+        class_col: str = "class_cd_std"
         exclude_bases: list[str] = ["", "UNK"]  # placeholder bases ignored in the class consistency check
         negative: dict[str, float] = {"warn": 0.0, "fail": 0.001}
         zero_expo_pos_prem: dict[str, float] = {"warn": 0.0, "fail": 0.001}

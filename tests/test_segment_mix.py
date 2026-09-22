@@ -17,7 +17,7 @@ def test_credibility_square_root_rule():
 
 def test_shares_and_cumulative_share(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
-    df = chk.profile(["class1_cd"])
+    df = chk.profile(["class_cd_std"])
     assert not df.empty
     for col in ("premium", "records", "claims"):
         assert df[f"{col}_share"].sum() == pytest.approx(1.0)
@@ -30,9 +30,9 @@ def test_shares_and_cumulative_share(ctx_injected):
 
 def test_totals_match_the_table(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
-    df = chk.profile(["class1_cd"])
+    df = chk.profile(["class_cd_std"])
     raw = ctx_injected.db.query(
-        "SELECT COUNT(*) r, SUM(tot_wrtn_prm_amt) p, SUM(claim_alloc) c FROM gl_master_synth").iloc[0]
+        "SELECT COUNT(*) r, SUM(tot_wrtn_prm_amt) p, SUM(claim_ant) c FROM gl_master_synth").iloc[0]
     assert df["records"].sum() == int(raw["r"])
     assert df["premium"].sum() == pytest.approx(float(raw["p"]))
     assert df["claims"].sum() == int(raw["c"])
@@ -41,7 +41,7 @@ def test_totals_match_the_table(ctx_injected):
 def test_large_and_thin_flags(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
     t = Thresholds(large_share=0.05, material_share=0.005, z_target=0.5)
-    df = chk.profile(["class1_cd"], t)
+    df = chk.profile(["class_cd_std"], t)
     large, thin = df[df["flag"] == "large"], df[df["flag"] == "thin"]
     assert (large["premium_share"] > t.large_share).all()
     assert (thin["premium_share"] >= t.material_share).all() and (thin["z_claims"] < t.z_target).all()
@@ -53,19 +53,19 @@ def test_large_and_thin_flags(ctx_injected):
 
 def test_thresholds_change_the_flags(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
-    strict = chk.profile(["class1_cd"], Thresholds(z_target=0.9, material_share=0.001))
-    lenient = chk.profile(["class1_cd"], Thresholds(z_target=0.1, material_share=0.05))
+    strict = chk.profile(["class_cd_std"], Thresholds(z_target=0.9, material_share=0.001))
+    lenient = chk.profile(["class_cd_std"], Thresholds(z_target=0.1, material_share=0.05))
     assert (strict["flag"] == "thin").sum() > (lenient["flag"] == "thin").sum()
 
 
 def test_two_way_combination_and_source_split(ctx_injected):
     chk = ctx_injected.make_check("segment_mix")
-    one = chk.profile(["class1_cd"])
-    two = chk.profile(["class1_cd", "trr_cd"])
+    one = chk.profile(["class_cd_std"])
+    two = chk.profile(["class_cd_std", "trr_cd"])
     assert len(two) > len(one)                                  # cells multiply
-    assert two["segment"].str.contains(r"class1_cd=.*\|trr_cd=").all()
+    assert two["segment"].str.contains(r"class_cd_std=.*\|trr_cd=").all()
     assert two["premium"].sum() == pytest.approx(one["premium"].sum())
-    by_src = chk.profile(["src", "class1_cd"])
+    by_src = chk.profile(["src", "class_cd_std"])
     assert by_src["segment"].str.startswith("src=").all()
 
 
@@ -73,8 +73,8 @@ def test_findings_feed_the_tracker(ctx_injected):
     res = ctx_injected.make_check("segment_mix").run()
     f = res.findings
     assert set(f["variable"]) <= set(ctx_injected.schema.names())   # tracker joins on real columns
-    metrics = set(f[f["variable"] == "class1_cd"]["metric"])
+    metrics = set(f[f["variable"] == "class_cd_std"]["metric"])
     assert {"n_segments", "top_segment_share", "pct_premium_below_credibility",
             "n_thin_material_segments"} == metrics
-    below = f[(f["variable"] == "class1_cd") & (f["metric"] == "pct_premium_below_credibility")].iloc[0]
+    below = f[(f["variable"] == "class_cd_std") & (f["metric"] == "pct_premium_below_credibility")].iloc[0]
     assert 0 <= below["value"] <= 1

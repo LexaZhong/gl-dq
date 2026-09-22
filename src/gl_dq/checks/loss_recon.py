@@ -34,7 +34,7 @@ class LossRecon(Check):
         time_dim: str = "loss_yr"
         sot_query: str = "sql/sot_loss.sql"
         sot_loss_col: str = "allocation"
-        sot_claim_count_col: str = "claim_alloc"
+        sot_claim_count_col: str = "claim_ant"
         dim_map: dict[str, str] = {}
         where: str | None = None  # pipeline filter, to match what the source of truth covers
         tolerance_loss: Tolerance = Tolerance(abs=5000, pct=0.02)

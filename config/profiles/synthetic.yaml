@@ -14,13 +14,13 @@ derived_columns:
 measures:
   written_premium: tot_wrtn_prm_amt
   loss: allocation
-  claim_count: claim_alloc
+  claim_count: claim_ant
   exposure: expo_amt
-  exposure_base: expn_bs
+  exposure_base: expn_bs_std
 
 policy_key: [pol_num, pol_eff_dt, pol_exp_dt]   # what identifies one policy term (used for policy counts)
-segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs, mm_seg_cd, loc_st_abbr, trr_cd,
-                     class1_cd, each_occ_lmt_amt, genl_ag_lmt_amt, tx_type_nm, pol_stat]
+segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs_std, mm_seg_cd, loc_st_abbr, trr_cd,
+                     class_cd_std, each_occ_lmt_amt, genl_ag_lmt_amt, tx_type_nm, pol_stat]
 
 sql_vars:
   sot_premium_table: sot_premium_synth
