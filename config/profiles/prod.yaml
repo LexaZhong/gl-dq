@@ -41,7 +41,3 @@ results:
   path: ${DQ_RESULTS_PATH:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}}
 refresh_job_id: ${DQ_REFRESH_JOB_ID}
 
-# Per-check settings that differ from config/checks/*.yaml for this profile.
-check_overrides:
-  loss_summary:
-    analytics: {segments: [src]}

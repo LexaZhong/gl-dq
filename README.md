@@ -6,16 +6,15 @@ stored as YAML, so the knowledge carries over to other projects.
 
 | Page | What it answers |
 |---|---|
-| 📋 Portfolio summary (front page) | What is in the table: record count, policy count (distinct `pol_num` + `pol_eff_dt` + `pol_exp_dt`) and written premium, by `src` × `covg_type_desc` or any other level, with data tables and CSV export |
+| 📋 Portfolio summary (front page) | What is in the table: records, policy count (distinct `pol_num` + `pol_eff_dt` + `pol_exp_dt`), written premium, loss and claim count — as headline numbers and by `src` × `covg_type_desc` or any other level, with loss ratio and severity per segment, data tables and CSV export |
 | 🧭 Cleaning tracker | Workflow board (columns per stage and who they're waiting on), closed vs to go, progress by check, bulk assign, activity, run history |
 | 🧰 Preprocessing | Recommended preprocessing steps for columns handled in modeling; exports `preprocessing_spec.yaml` |
 | 📚 Knowledge base | Search notes, see edit history, export a Markdown data dictionary |
 | 🔑 Key uniqueness | Is the key unique per source and across the whole table? Greedy key suggestion |
 | 🔲 Missing rate | Missing share per variable × level, with per-variable thresholds, sentinels and `applies_when` |
-| 📏 Business rules | SQL validity rules (date order, event inside policy period, deductible exclusivity…) |
+| 📏 Business rules | SQL validity rules (date order, deductible exclusivity…) |
 | 🔤 Values check | Values used by one source only, values outside plausible bounds, sentinel spikes, and medians that differ by source like a unit error |
 | 📊 Distributions | User-chosen variables and levels, percentile bins (preset or custom), log transforms, PSI, outliers, new categories |
-| 📉 Loss summary | *(Portfolio analysis)* loss ratio, severity and frequency (per exposure base) by segment, and the spread of policy-level loss ratios |
 | 📐 Exposure summary | `expo_amt` by `expn_bs_std`, premium per exposure, negative or zero exposure, classes on more than one base |
 | 🧩 Segment mix & credibility | *(Portfolio analysis)* **Mix & credibility**: premium, record and claim shares for any combination of up to three rating dimensions, with a Pareto and credibility Z = min(1, √(n/1082)) on claims and records — which segments drive the book, which are too thin to price. **🔬 Segment deep dive**: click a segment to see, at policy-term grain, its premium / exposure / severity / frequency distributions against the rest of the book (linear or log), its trend by policy year, how many more claims it needs to reach the credibility target, what is inside the cell, and whether one policy carries its loss |
 

@@ -24,7 +24,7 @@ Typical drills by check:
 - **missing_rate**: missing share by src × pol_yr × tx_type_nm / pol_stat; is it concentrated in a load date, state, class?
 - **key_uniqueness**: sample duplicate groups (`key_duplicates.sql.j2`); are duplicates exact copies (load issue) or differ in one column (grain issue → which column)?
 - **distribution PSI / outliers**: percentiles by year; ratio of medians between the flagged segment and its peers (×100 → cents, ×1000 → thousands); top rows by value.
-- **loss_summary**: a loss ratio out of range is usually a premium or an allocation problem, not both - check severity and frequency separately (one moves, the other does not), and whether one policy carries the loss (segment deep dive).
+- **loss ratio out of range** (Portfolio summary): usually a premium or an allocation problem, not both - compare loss and premium separately, and check whether one policy carries the loss (segment deep dive).
 - **exposure**: rows with zero/negative exposure by tx_type_nm; class codes with multiple bases and their row counts per base.
 - **business_rules**: violating rows by src × pol_yr; dates relative to load or cancellation.
 

@@ -30,7 +30,6 @@ table, measures, derived columns and per-profile `check_overrides` (deep-merged)
    |---|---|---|
    | per-variable missing threshold / level / sentinel | missing_rate | `variables.<var>: {warn, fail, group_by, treat_as_missing, applies_when}` |
    | profile a variable, bins, log scale, PSI | distribution | `variables: - {name, type, group_by, percentile_bins: 20 or [..], log_scale: {method: none/log1p/log10/signed_log, y}, hist_bins, psi: {across}, allow_negative, outlier_ratio, top_n}` |
-   | loss ratio / severity / frequency | loss_summary | `where`, `loss_ratio_warn`, `loss_ratio_fail`, `analytics.{segments, lr_basis, frequency_per, lr_cap, lr_bins}` |
    | key per source | key_uniqueness | `candidate_keys.<SRC or _all>` |
    | validity rule | business_rules | `rules: - {id, description, variables, violation, applies_when, warn, fail}` |
    | value consistency / plausibility | value_checks | `categorical.<col>: {max_values, warn_rows, fail_rows}`; `numeric.<col>: {min, max, allow_negative, allow_zero, discrete, top_value_warn, compare_medians}` |

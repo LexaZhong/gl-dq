@@ -39,18 +39,29 @@ def filter_clause(ctx, filters: dict[str, list[str]] | None) -> str | None:
     return " AND ".join(f"({p})" for p in parts) if parts else None
 
 
+def _measures(ctx) -> dict:
+    m = ctx.project.measures
+    return dict(policy_key=[ctx.schema.ref(c) for c in ctx.schema.validate(ctx.project.policy_key)],
+                premium=ctx.schema.ref(m.written_premium), loss=ctx.schema.ref(m.loss),
+                claims=ctx.schema.ref(m.claim_count))
+
+
 def summarize(ctx, dims: list[str] | None = None, where: str | None = None) -> pd.DataFrame:
+    """Records, policy terms, premium, loss and claims at one grouping level."""
     dims = ctx.schema.validate(list(dims or []))
-    sql = ctx.render_sql("summary.sql.j2", dims=dims,
-                         policy_key=[ctx.schema.ref(c) for c in ctx.schema.validate(ctx.project.policy_key)],
-                         premium=ctx.schema.ref(ctx.project.measures.written_premium), where=where)
+    sql = ctx.render_sql("summary.sql.j2", dims=dims, where=where, **_measures(ctx))
     df = ctx.db.query(sql)
     for c in ("records", "policies"):
         df[c] = df[c].astype("int64")
-    df["premium"] = df["premium"].astype(float)
+    for c in ("premium", "loss", "claims"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+    df["claims"] = df["claims"].round().astype("int64")
     with np.errstate(divide="ignore", invalid="ignore"):
         df["premium_per_policy"] = np.where(df["policies"] > 0, df["premium"] / df["policies"], np.nan)
         df["records_per_policy"] = np.where(df["policies"] > 0, df["records"] / df["policies"], np.nan)
+        # both sides are policy-year based here, so the ratio compares like with like
+        df["loss_ratio"] = np.where(df["premium"] > 0, df["loss"] / df["premium"], np.nan)
+        df["severity"] = np.where(df["claims"] > 0, df["loss"] / df["claims"], np.nan)
     if dims:
         total = df["premium"].sum()
         df["premium_share"] = df["premium"] / total if total else np.nan
@@ -95,6 +106,5 @@ def filter_impact(ctx, fs=None) -> pd.DataFrame:
 
 
 def summary_sql(ctx, dims: list[str] | None = None, where: str | None = None) -> str:
-    return ctx.render_sql("summary.sql.j2", dims=ctx.schema.validate(list(dims or [])),
-                          policy_key=[ctx.schema.ref(c) for c in ctx.project.policy_key],
-                          premium=ctx.schema.ref(ctx.project.measures.written_premium), where=where)
+    return ctx.render_sql("summary.sql.j2", dims=ctx.schema.validate(list(dims or [])), where=where,
+                          **_measures(ctx))

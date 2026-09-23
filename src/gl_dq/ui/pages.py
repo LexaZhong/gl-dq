@@ -223,13 +223,18 @@ def summary_page():
     if filters:
         _promote_button(ctx, filters)
 
+    m = ctx.project.measures
     totals = state.summary([], where)
     t = totals.iloc[0]
-    k = st.columns(4)
+    k = st.columns(6)
     k[0].metric("Records", f"{int(t.records):,}")
     k[1].metric("Policies", f"{int(t.policies):,}", help="Distinct policy terms")
     k[2].metric("Written premium", compact(t.premium), help=f"{t.premium:,.2f}")
-    k[3].metric("Premium per policy", f"{t.premium_per_policy:,.0f}" if t.policies else "-")
+    k[3].metric("Loss", compact(t.loss), help=f"`{m.loss}` · {t.loss:,.2f}")
+    k[4].metric("Claims", f"{int(t.claims):,}", help=f"`{m.claim_count}`")
+    k[5].metric("Loss ratio", f"{t.loss_ratio:.1%}" if t.premium else "-",
+                help="Loss over written premium. Both are policy-year based, so they compare like "
+                     "with like.")
     if where:
         full = state.summary([]).iloc[0]
         shown = "; ".join(f"**{col}**: " + ", ".join(vals) for col, vals in filters.items())
@@ -267,14 +272,15 @@ def summary_page():
         else dict(color_discrete_sequence=[CATEGORICAL[0]])
     # the frame is sorted by premium, so without this the x axis would be too: years out of order
     orders = ordered_categories(plot, enc, x)
-    cols = st.columns(3)
-    for col, (y, title, fmt) in zip(cols, [("premium", "Written premium", ",.0f"),
-                                           ("policies", "Policies", ",.0f"),
-                                           ("records", "Records", ",.0f")]):
-        fig = px.bar(plot, x=x, y=y, barmode="group", hover_data={y: f":{fmt}"}, labels={y: ""},
-                     category_orders=orders, **enc)
-        fig.update_layout(showlegend=bool(color))
-        col.plotly_chart(style(fig, 300, title), use_container_width=True)
+    panels = [("premium", "Written premium"), ("loss", f"Loss ({m.loss})"), ("claims", "Claims"),
+              ("policies", "Policies"), ("records", "Records")]
+    for row in (panels[:3], panels[3:]):
+        cols = st.columns(3)
+        for col, (y, title) in zip(cols, row):
+            fig = px.bar(plot, x=x, y=y, barmode="group", hover_data={y: ":,.0f"}, labels={y: ""},
+                         category_orders=orders, **enc)
+            fig.update_layout(showlegend=bool(color) and y == "premium")
+            col.plotly_chart(style(fig, 300, title), use_container_width=True)
 
     if len(dims) > 1:
         st.markdown(f"**By {dims[0]}**")
@@ -294,11 +300,16 @@ def summary_page():
 
 
 def _summary_table(df, dims, key: str):
-    view = df.assign(premium=df["premium"].round(0), premium_per_policy=df["premium_per_policy"].round(0))
+    view = df.assign(premium=df["premium"].round(0), loss=df["loss"].round(0),
+                     premium_per_policy=df["premium_per_policy"].round(0), severity=df["severity"].round(0))
     st.dataframe(view, hide_index=True, use_container_width=True, key=key, column_config={
         "records": st.column_config.NumberColumn(format="localized"),
         "policies": st.column_config.NumberColumn(format="localized"),
         "premium": st.column_config.NumberColumn(format="localized"),
+        "loss": st.column_config.NumberColumn(format="localized"),
+        "claims": st.column_config.NumberColumn(format="localized"),
+        "loss_ratio": st.column_config.NumberColumn(format="percent"),
+        "severity": st.column_config.NumberColumn("severity (loss/claim)", format="localized"),
         "premium_per_policy": st.column_config.NumberColumn(format="localized"),
         "records_per_policy": st.column_config.NumberColumn(format="%.2f"),
         "premium_share": st.column_config.NumberColumn(format="percent")})

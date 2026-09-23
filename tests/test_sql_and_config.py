@@ -80,10 +80,10 @@ def test_config_roundtrip(ctx_injected, tmp_path):
 
 def test_page_order_and_sections(ctx_injected):
     assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "value_checks",
-                                             "distribution", "exposure", "loss_summary", "segment_mix"]
+                                             "distribution", "exposure", "segment_mix"]
     sections = ctx_injected.checks_by_category()
     assert list(sections) == ["Checks", "Portfolio analysis"]          # order of first appearance
-    assert sections["Portfolio analysis"] == ["loss_summary", "segment_mix"]
+    assert sections["Portfolio analysis"] == ["segment_mix"]
     assert sections["Checks"][:4] == ["key_uniqueness", "missing_rate", "business_rules", "value_checks"]
 
 

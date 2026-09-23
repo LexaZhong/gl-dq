@@ -50,7 +50,7 @@ def _column_fields(d: dict) -> list[str]:
         [v.get("name") for v in (d.get("variables") or []) if isinstance(v, dict)]
     for r in (d.get("rules") or []):
         cols += r.get("variables") or []
-    for key, value in d.items():  # a nested section such as loss_summary.analytics
+    for key, value in d.items():  # a nested section (e.g. a check's `analytics` block)
         if isinstance(value, dict) and key not in ("categorical", "numeric", "candidate_keys", "variables"):
             cols += _column_fields(value)
     return cols
@@ -109,10 +109,10 @@ def main(argv=None):
         if missing:
             problems.append(f"{label}: {', '.join(missing)}")
 
-    try:  # derived columns must also *evaluate* (e.g. year(evt_dt) needs evt_dt to be a date)
-        ctx.db.query(ctx.render_sql("summary.sql.j2", dims=list(ctx.project.derived_columns),
-                                    policy_key=[ctx.schema.ref(c) for c in ctx.project.policy_key],
-                                    premium=ctx.schema.ref(ctx.project.measures.written_premium), where=None))
+    try:  # derived columns must also *evaluate* (e.g. year(pol_eff_dt) needs pol_eff_dt to be a date)
+        from gl_dq.summary import summary_sql
+
+        ctx.db.query(summary_sql(ctx, list(ctx.project.derived_columns)))
         print(f"  ok    derived columns evaluate: {', '.join(ctx.project.derived_columns) or 'none'}")
     except Exception as e:  # noqa: BLE001
         print(f"{BAD} derived columns failed: {e}")

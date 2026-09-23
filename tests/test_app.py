@@ -6,7 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "app.py")
 PAGES = ["summary", "tracker", "preprocessing", "knowledge", "key_uniqueness", "missing_rate", "distribution",
-         "exposure", "business_rules", "value_checks", "loss_summary", "segment_mix"]
+         "exposure", "business_rules", "value_checks", "segment_mix"]
 
 
 @pytest.fixture(scope="module")
@@ -113,7 +113,8 @@ def test_summary_is_the_landing_page(refreshed, monkeypatch):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert at.title[0].value.startswith("📋 Portfolio summary")
-    assert {"Records", "Policies", "Written premium", "Premium per policy"} == {m.label for m in at.metric}
+    assert {"Records", "Policies", "Written premium", "Loss", "Claims", "Loss ratio"} == \
+        {m.label for m in at.metric}
     assert at.multiselect(key="sum_dims").value == ["src", "covg_type_desc"]
 
 

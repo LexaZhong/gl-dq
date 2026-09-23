@@ -1,10 +1,12 @@
-{# Portfolio summary: record count, distinct policy terms and premium, at one grouping level #}
+{# Portfolio summary: records, distinct policy terms, premium, loss and claims, at one level #}
 SELECT
   {% for g in dims %}{{ sel(g) }}, {% endfor %}
 
   COUNT(*) AS records,
   COUNT(DISTINCT {{ dialect.row(policy_key) }}) AS policies,
-  SUM({{ premium }}) AS premium
+  SUM({{ premium }}) AS premium,
+  SUM({{ loss }}) AS loss,
+  SUM({{ claims }}) AS claims
 FROM {{ table }}
 {% if where %}WHERE {{ where }}{% endif %}
 {% if dims %}GROUP BY {% for g in dims %}{{ loop.index }}{{ ", " if not loop.last }}{% endfor %}{% endif %}

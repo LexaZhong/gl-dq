@@ -153,7 +153,6 @@ def test_every_column_a_check_config_names_is_checked(ctx_injected):
     assert set(ctx_injected.check_config("segment_mix").dimensions) <= set(cols["segment_mix"])
     vc = ctx_injected.check_config("value_checks")
     assert set(vc.categorical) | set(vc.numeric) <= set(cols["value_checks"])
-    assert ctx_injected.check_config("loss_summary").analytics.lr_basis in cols["loss_summary"]
     for name, names in cols.items():
         for c in names:
             assert ctx_injected.schema.has(c), f"{name} references {c}, which is not in the table"
