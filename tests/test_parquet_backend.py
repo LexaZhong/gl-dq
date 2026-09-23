@@ -20,16 +20,9 @@ def parquet_ctx(data_dirs, tmp_path_factory):
     profile.write_text(yaml.safe_dump({
         "extends": "parquet",
         "name": "parquet test",
-        "parquet_views": {"gl_master": str(folder / "gl_master_synth.parquet"),
-                          "sot_premium": str(folder / "sot_premium_synth.parquet"),
-                          "sot_loss": str(folder / "sot_loss_synth.parquet")},
+        "parquet_views": {"gl_master": str(folder / "gl_master_synth.parquet")},
         "knowledge_dir": str(tmp / "knowledge"),
         "results": {"type": "parquet", "path": str(tmp / "runs")},
-        # the synthetic study has a coverage split and all three sources
-        "check_overrides": {"premium_recon": {"sot_query": "sql/sot_premium.sql", "dims": ["src", "covg_type_desc"],
-                                              "where": None},
-                            "loss_recon": {"sot_query": "sql/sot_loss.sql", "segments": ["src"], "where": None,
-                                           "tolerance_claims": {"abs": 5, "pct": 0.02}}},
     }), encoding="utf-8")
     return load_context(str(profile))
 
@@ -66,46 +59,27 @@ def test_missing_optional_source_is_reported_not_fatal(data_dirs, tmp_path):
     profile.write_text(yaml.safe_dump({
         "extends": "parquet", "name": "no study",
         "parquet_views": {"gl_master": str(folder / "gl_master_synth.parquet"),
-                          "sot_premium": str(tmp_path / "does_not_exist")},
+                          "reference": str(tmp_path / "does_not_exist")},
         "knowledge_dir": str(tmp_path / "k"), "results": {"type": "parquet", "path": str(tmp_path / "r")}}),
         encoding="utf-8")
     ctx = load_context(str(profile))
-    assert "sot_premium" in ctx.db.missing
+    assert "reference" in ctx.db.missing
     assert ctx.db.query("SELECT COUNT(*) AS n FROM gl_master").iloc[0]["n"] > 0
-    with pytest.raises(Exception, match="sot_premium"):
-        ctx.db.describe("sot_premium")
+    with pytest.raises(Exception, match="reference"):
+        ctx.db.describe("reference")
 
 
 def test_a_view_can_be_a_csv(data_dirs, tmp_path):
-    """A study downloaded from a SQL editor is a CSV; it must not need converting first."""
+    """A reference list downloaded from a SQL editor is a CSV; it must not need converting first."""
     folder = data_dirs["injected"].parent
-    csv = tmp_path / "sot_premium.csv"
+    csv = tmp_path / "reference.csv"
     ParquetDatabase({"g": str(folder / "gl_master_synth.parquet")}).query(
         "SELECT src, year(pol_eff_dt) AS pol_yr, SUM(tot_wrtn_prm_amt) AS wrtn_prm FROM g GROUP BY 1, 2"
     ).to_csv(csv, index=False)
 
-    db = ParquetDatabase({"gl_master": str(folder / "gl_master_synth.parquet"), "sot_premium": str(csv)})
+    db = ParquetDatabase({"gl_master": str(folder / "gl_master_synth.parquet"), "reference": str(csv)})
     assert not db.missing
-    assert set(db.describe("sot_premium")) == {"src", "pol_yr", "wrtn_prm"}
-    assert int(db.query("SELECT COUNT(*) n FROM sot_premium").iloc[0]["n"]) > 0
+    assert set(db.describe("reference")) == {"src", "pol_yr", "wrtn_prm"}
+    assert int(db.query("SELECT COUNT(*) n FROM reference").iloc[0]["n"]) > 0
 
 
-def test_parquet_profile_reads_the_extract_not_the_raw_study(data_dirs, tmp_path):
-    """The extract is already the study's OUTPUT, so the SOT query here is a passthrough: the raw
-    columns the prod query filters on (LOB, BMQ_IND, CONTR_EFF_DT) are not in an extract."""
-    folder = data_dirs["injected"].parent
-    profile = tmp_path / "p.yaml"
-    profile.write_text(yaml.safe_dump({
-        "extends": "parquet",
-        "parquet_views": {"gl_master": str(folder / "gl_master_synth.parquet"),
-                          "sot_premium": str(folder / "sot_premium_synth.parquet"),
-                          "sot_loss": str(folder / "sot_loss_synth.parquet")},
-        "knowledge_dir": str(tmp_path / "k"), "results": {"type": "parquet", "path": str(tmp_path / "r")},
-    }), encoding="utf-8")
-    ctx = load_context(str(profile))
-    assert ctx.check_config("premium_recon").sot_query == "sql/sot_premium_extract.sql"
-    assert ctx.check_config("loss_recon").sot_query == "sql/sot_loss_extract.sql"
-    sql = ctx.render_user_sql(ctx.check_config("premium_recon").sot_query)
-    body = re.sub(r"--[^\n]*", "", sql)  # the file documents the raw columns in its comments
-    assert "sot_premium" in body and "LOB" not in body
-    ctx.db.query(sql)  # and it runs against the extract

@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from gl_dq.checks._recon import pipeline_agg
+from gl_dq.checks._agg import agg_by_dims
 from gl_dq.checks.distribution import inverse_transform, transform_sql
 from gl_dq.core.results import _fmt
 
@@ -172,7 +172,7 @@ def policy_trend(check, where: str, base: str | None, per: float, time_dim: str 
                 "exposure": f"CASE WHEN {_base_pred(check, base)} THEN {s.ref(m.exposure)} END"}
     frames = []
     for scope, clause in ((SEGMENT, where), (REST, f"NOT COALESCE(({where}), FALSE)")):
-        df = pipeline_agg(check, [time_dim], measures, clause, label=f"deep dive: {scope} by {time_dim}")
+        df = agg_by_dims(check, [time_dim], measures, clause, label=f"deep dive: {scope} by {time_dim}")
         frames.append(df.assign(scope=scope))
     out = pd.concat(frames, ignore_index=True)
     for col in ("premium", "loss", "claims", "exposure"):
@@ -229,14 +229,23 @@ def render_detail(check, st, mix_df: pd.DataFrame, dims: list[str], t) -> None:
     values = {d: row[d] for d in dims if d in row.index}
     where = segment_where(check.schema, check.ctx.dialect, values)
 
-    # the default exposure base is the one this segment actually writes, not the first one in the book
-    in_seg = state.cached_method(check.name, cfg, "profile", dims=(m.exposure_base,), thresholds=t, where=where)
     bases = [str(b) for b in state.distinct_values(m.exposure_base) if b is not None]
-    biggest = str(in_seg.iloc[0][m.exposure_base]) if not in_seg.empty else None
-    base = c2.selectbox("Exposure base", bases, index=bases.index(biggest) if biggest in bases else 0,
-                        key="sm_detail_base",
-                        help=f"`{m.exposure}` is only additive within one `{m.exposure_base}`, so exposure and "
-                             "frequency are measured for a single base") if bases else None
+    base_help = (f"`{m.exposure}` is only additive within one `{m.exposure_base}`, so exposure and "
+                 "frequency are measured for a single base")
+    if m.exposure_base in values:
+        # the segment already fixes the base: follow it rather than letting the two disagree
+        picked = _fmt(values[m.exposure_base])
+        base = None if picked == "<null>" else picked
+        c2.selectbox("Exposure base", [picked], index=0, key=f"sm_detail_base_fixed_{picked}", disabled=True,
+                     help=f"Fixed by the segment: you are slicing by `{m.exposure_base}`. " + base_help)
+    elif bases:
+        # default to the base this segment actually writes, not the first one in the book
+        in_seg = state.cached_method(check.name, cfg, "profile", dims=(m.exposure_base,), thresholds=t, where=where)
+        biggest = str(in_seg.iloc[0][m.exposure_base]) if not in_seg.empty else None
+        base = c2.selectbox("Exposure base", bases, index=bases.index(biggest) if biggest in bases else 0,
+                            key="sm_detail_base", help=base_help)
+    else:
+        base = None
     per = c3.number_input("Claims per N exposure", 1.0, value=1000.0, step=1000.0, key="sm_detail_per")
 
     # ---- what this segment is ---------------------------------------------------------

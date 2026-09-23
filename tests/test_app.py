@@ -5,8 +5,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "app.py")
-PAGES = ["summary", "tracker", "preprocessing", "knowledge", "key_uniqueness", "missing_rate", "distribution", "premium_recon", "loss_recon",
-         "exposure", "business_rules", "value_checks", "segment_mix"]
+PAGES = ["summary", "tracker", "preprocessing", "knowledge", "key_uniqueness", "missing_rate", "distribution",
+         "exposure", "business_rules", "value_checks", "loss_summary", "segment_mix"]
 
 
 @pytest.fixture(scope="module")
@@ -30,6 +30,15 @@ def _open(page, monkeypatch):
 def test_page_renders(refreshed, page, monkeypatch):
     at = _open(page, monkeypatch)
     assert at.title, "page rendered no title"
+    if page not in ("summary", "tracker", "preprocessing", "knowledge"):
+        # app.py falls back to the summary page for an unknown name, which would let a deleted
+        # page keep "passing" this test
+        assert at.title[0].value != "📋 Portfolio summary", f"{page} fell back to the summary page"
+
+
+def test_every_page_in_the_list_exists(ctx_injected):
+    overview = {"summary", "tracker", "preprocessing", "knowledge"}
+    assert set(PAGES) - overview == set(ctx_injected.enabled_checks())
 
 
 def test_status_note_and_assignees_saved_from_check_page(refreshed, monkeypatch):

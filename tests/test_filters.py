@@ -220,3 +220,61 @@ def test_a_missing_sql_var_is_named_in_the_error(ctx_injected):
     f = Filter(key="k", enabled=True, expr="id IN (SELECT id FROM {{ nope }})")
     with pytest.raises(Exception, match="nope"):
         predicate(ctx_injected, f)
+
+
+# ---- exclude_when: an exclusion must not drop what it cannot evaluate ------------------
+@pytest.fixture
+def three_valued(ctx_injected, tmp_path):
+    """A table with the two unknowns that matter: a PCO row with no id, and an unknown coverage."""
+    from gl_dq.core.db import ParquetDatabase
+    from gl_dq.core.schema import TableSchema
+
+    (tmp_path / "pco_demo.csv").write_text(
+        "covg_type_desc,gl_bop_id,premium\n"
+        "ProductsCompletedOps,A,10\nProductsCompletedOps,B,20\nProductsCompletedOps,,500\n"
+        "Premises/Operations,A,400\n,A,300\n,B,60\n", encoding="utf-8")
+    (tmp_path / "pco_list.csv").write_text("gl_bop_id\nA\n", encoding="utf-8")
+    db = ParquetDatabase({"pco_demo": str(tmp_path / "pco_demo.csv"), "pco_list": str(tmp_path / "pco_list.csv")})
+    project = ctx_injected.project.model_copy(update={"table": "pco_demo"})
+    return replace(ctx_injected, project=project, db=db,
+                   schema=TableSchema("pco_demo", db.describe("pco_demo"), {}, db.dialect))
+
+
+IN_LIST = """covg_type_desc = 'ProductsCompletedOps'
+             AND CAST(gl_bop_id AS STRING) IN (SELECT CAST(gl_bop_id AS STRING) FROM pco_list)"""
+
+
+def _kept(ctx):
+    return float(ctx.db.query(f"SELECT COALESCE(SUM(premium), 0) AS p FROM {ctx.table_expr}").iloc[0]["p"])
+
+
+def test_exclude_when_drops_only_what_is_definitely_true(three_valued):
+    """Regression: written as a keep-predicate this removed 810 of 1290 instead of 10, because
+    `NULL IN (...)` is NULL and an unknown predicate excludes."""
+    ctx = replace(three_valued, filters=FilterSet(filters=[
+        Filter(key="pco", enabled=True, exclude_when=IN_LIST)]))
+    assert _kept(ctx) == 1280.0                      # 1290 total, only the 10 row goes
+
+    as_keep = replace(three_valued, filters=FilterSet(filters=[
+        Filter(key="pco", enabled=True, expr=f"NOT ({IN_LIST})")]))
+    assert _kept(as_keep) == 480.0                   # the trap `exclude_when` exists to avoid
+
+
+def test_exclude_when_renders_null_safe(ctx_injected):
+    f = Filter(key="k", enabled=True, exclude_when="src = 'BOP'")
+    assert predicate(ctx_injected, f) == "NOT COALESCE((src = 'BOP'), FALSE)"
+    assert f.summary() == "SQL (drop when true)"
+
+
+def test_a_filter_sets_exactly_one_of_the_three_forms():
+    with pytest.raises(ValueError):
+        Filter(key="k", expr="1=1", exclude_when="1=1")
+    with pytest.raises(ValueError):
+        Filter(key="k", column="src", op="in", values=["BOP"], exclude_when="1=1")
+    assert Filter(key="k", exclude_when="1=1").exclude_when
+
+
+def test_fingerprint_tracks_exclude_when(ctx_injected):
+    a = replace(ctx_injected, filters=FilterSet(filters=[Filter(key="k", enabled=True, exclude_when="src = 'BOP'")]))
+    b = replace(ctx_injected, filters=FilterSet(filters=[Filter(key="k", enabled=True, exclude_when="src = 'BMQ'")]))
+    assert a.filters.fingerprint(a) != b.filters.fingerprint(b)

@@ -22,8 +22,6 @@ import sys
 dbutils.widgets.text("catalog", "na_actuarial_explore")  # noqa: F821
 dbutils.widgets.text("schema", "consd_sb_actuarial_sandbox")  # noqa: F821
 dbutils.widgets.text("table", "", "Full table name (blank = <catalog>.<schema>.gl_master)")  # noqa: F821
-dbutils.widgets.text("sot_premium_table", "", "Premium source of truth (optional)")  # noqa: F821
-dbutils.widgets.text("sot_loss_table", "", "Loss source of truth (optional)")  # noqa: F821
 dbutils.widgets.text("volume_dir", "/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning", "Volume folder for statuses, notes and run history")  # noqa: F821
 dbutils.widgets.dropdown("create_volume", "no", ["no", "yes"], "Create the gl_dq volume if missing")  # noqa: F821
 
@@ -31,8 +29,7 @@ catalog = dbutils.widgets.get("catalog")  # noqa: F821
 schema = dbutils.widgets.get("schema")  # noqa: F821
 os.environ["DQ_PROFILE"] = "workspace"
 os.environ["DQ_CATALOG"], os.environ["DQ_SCHEMA"] = catalog, schema
-for widget, env in [("table", "DQ_TABLE"), ("sot_premium_table", "DQ_SOT_PREMIUM_TABLE"),
-                    ("sot_loss_table", "DQ_SOT_LOSS_TABLE"), ("volume_dir", "DQ_VOLUME_DIR")]:
+for widget, env in [("table", "DQ_TABLE"), ("volume_dir", "DQ_VOLUME_DIR")]:
     value = dbutils.widgets.get(widget)  # noqa: F821
     if value:
         os.environ[env] = value
@@ -48,11 +45,8 @@ from gl_dq.core.config import load_project  # noqa: E402
 p = load_project("workspace")
 print(f"repo:      {ROOT}")
 print(f"table:     {p.table}")
-print(f"premium SOT: {p.sql_vars['sot_premium_table']}")
-print(f"loss SOT:    {p.sql_vars['sot_loss_table']}  (study window {p.sql_vars['study_from']} .. {p.sql_vars['study_to']})")
 print(f"knowledge: {p.knowledge_dir}")
 print(f"findings:  {p.results.path if p.results.type == 'parquet' else p.results.table}")
-print(f"reconciliation covers: {p.check_overrides.get('premium_recon', {}).get('where', 'all sources')}")
 
 # COMMAND ----------
 # Knowledge (statuses + notes) must outlive the cluster, so it lives in a UC volume.
@@ -78,12 +72,7 @@ except SystemExit as e:
     print(f"\nPreflight found problems (exit {e.code}). Fix them in config/ before going further.")
 
 # COMMAND ----------
-import validate_sot  # noqa: E402
 
-try:
-    validate_sot.main(["--profile", "workspace", "--check", "both"])
-except SystemExit as e:
-    print(f"\nSource-of-truth problems (exit {e.code}): fix config/sql/sot_*_prod.sql or the dim_map.")
 
 # COMMAND ----------
 # MAGIC %md ## 2. Run every check and store the findings
@@ -112,7 +101,7 @@ display(summarize(ctx, ["src", "covg_type_desc"]))  # noqa: F821
 
 # COMMAND ----------
 # import export_extract  # noqa: E402
-# export_extract.main(["--profile", "workspace"])            # -> <volume>/extract/{gl_master,sot_premium,sot_loss}
+# export_extract.main(["--profile", "workspace"])            # -> <volume>/extract/gl_master
 # export_extract.main(["--profile", "workspace", "--sample", "200000"])   # a smaller share
 #
 # then, anywhere:

@@ -46,7 +46,7 @@ class ProjectConfig(BaseModel):
     measures: Measures = Measures()
     policy_key: list[str] = ["pol_num", "pol_eff_dt", "pol_exp_dt"]  # identifies one policy term
     segment_candidates: list[str] = []
-    sql_vars: dict[str, str] = {}  # template variables for SOT queries, e.g. sot_premium_table
+    sql_vars: dict[str, str] = {}  # template variables for config/filters.yaml rules, e.g. a reference list
     config_dir: str = "config"  # contains checks/*.yaml and sql/*.sql
     knowledge_dir: str = "data/knowledge"
     results: ResultsConfig = ResultsConfig()

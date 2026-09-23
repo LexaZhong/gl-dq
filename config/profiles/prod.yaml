@@ -25,11 +25,7 @@ policy_key: [pol_num, pol_eff_dt, pol_exp_dt]   # what identifies one policy ter
 segment_candidates: [src, pol_yr, loss_yr, covg_type_desc, expn_bs_std, mm_seg_cd, loc_st_abbr, trr_cd,
                      class_cd_std, each_occ_lmt_amt, genl_ag_lmt_amt, tx_type_nm, pol_stat]
 
-sql_vars:                          # referenced by the SOT queries in <config_dir>/sql/*.sql
-  sot_premium_table: ${DQ_SOT_PREMIUM_TABLE:-cimm_csm.premium_transx_seg_enriched_2026q2}
-  sot_loss_table: ${DQ_SOT_LOSS_TABLE:-cimm_csm.loss_transx_seg_enriched_2026q2}
-  study_from: ${DQ_STUDY_FROM:-2014-01-01}    # policy effective-date window of the study
-  study_to: ${DQ_STUDY_TO:-2025-12-31}
+sql_vars:                          # template variables for config/filters.yaml rules
   # reference lists used by config/filters.yaml. A CSV on a volume is read in place; point this at a
   # table name instead once the list is loaded (faster, and it can be refreshed on a schedule).
   no_pco_ids_source: >-
@@ -46,18 +42,7 @@ results:
   path: ${DQ_RESULTS_PATH:-${DQ_VOLUME_DIR:-/Volumes/na_combined_explore_rfnd-risk_cohort/risk-cohort-volume/GL/gl_master_cleaning}}
 refresh_job_id: ${DQ_REFRESH_JOB_ID}
 
-# The pricing study covers BMQ and CMQ only, has no coverage split, and is limited to policies
-# effective 2014-2025, so the pipeline side is filtered to match and the two sides compare like
-# for like. When a BOP source of truth exists: UNION it into the SQL and drop 'BOP' from the
-# `where` filters below (and widen `dims` again if the BOP study has a coverage split).
+# Per-check settings that differ from config/checks/*.yaml for this profile.
 check_overrides:
-  premium_recon:
-    sot_query: sql/sot_premium_prod.sql
-    dims: [src, pol_yr]
-    where: "src IN ('BMQ', 'CMQ') AND pol_eff_dt >= DATE '2014-01-01' AND pol_eff_dt <= DATE '2025-12-31'"
-  loss_recon:
-    sot_query: sql/sot_loss_prod.sql
-    segments: [src]
-    where: "src IN ('BMQ', 'CMQ') AND pol_eff_dt >= DATE '2014-01-01' AND pol_eff_dt <= DATE '2025-12-31'"
-    # distinct occurrences (study) vs allocated claim counts (pipeline): widen until confirmed equal
-    tolerance_claims: {abs: 25, pct: 0.05}
+  loss_summary:
+    analytics: {segments: [src]}

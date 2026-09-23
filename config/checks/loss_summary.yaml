@@ -1,0 +1,14 @@
+enabled: true
+order: 70
+# Without the reconciliation this page describes the book rather than validating it:
+# a high loss ratio is a fact about the portfolio, not a defect in the data.
+category: Portfolio analysis
+# where: "src IN ('BMQ', 'CMQ')"   # restrict the population this page describes
+loss_ratio_warn: 0.8               # a segment's loss ratio above this is flagged on the tracker
+loss_ratio_fail: 1.0
+analytics:
+  segments: [src]
+  lr_basis: pol_yr           # written premium only for now -> policy-year basis
+  frequency_per: 1000        # claims per N exposure units, within one exposure base
+  lr_cap: 5.0
+  lr_bins: 50

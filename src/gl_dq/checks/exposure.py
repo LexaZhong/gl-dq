@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from gl_dq.checks._recon import pipeline_agg
+from gl_dq.checks._agg import agg_by_dims
 from gl_dq.checks.base import Check, CheckResult
 from gl_dq.core.config import CheckConfig
 from gl_dq.core.registry import register_check
@@ -31,7 +31,7 @@ class Exposure(Check):
     def summary(self, by: list[str]) -> pd.DataFrame:
         m, s = self.project.measures, self.schema
         dims = list(dict.fromkeys([m.exposure_base] + by))
-        df = pipeline_agg(self, dims, {"exposure": s.ref(m.exposure), "premium": s.ref(m.written_premium),
+        df = agg_by_dims(self, dims, {"exposure": s.ref(m.exposure), "premium": s.ref(m.written_premium),
                                        "rows": "1"}, label="exposure by base")
         with np.errstate(divide="ignore", invalid="ignore"):
             df["premium_per_expo"] = np.where(df["exposure"] > 0, df["premium"] / df["exposure"], np.nan)

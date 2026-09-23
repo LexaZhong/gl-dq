@@ -42,7 +42,8 @@ class Filter(BaseModel):
     column: str | None = None
     op: Op = "in"
     values: list[str] = []
-    expr: str | None = None  # raw predicate; may use {{ raw_table }} to reference the table itself
+    expr: str | None = None  # raw predicate for the rows to KEEP
+    exclude_when: str | None = None  # raw predicate for the rows to DROP (unknown = keep)
 
     @field_validator("key")
     @classmethod
@@ -53,8 +54,9 @@ class Filter(BaseModel):
 
     @model_validator(mode="after")
     def _one_of(self):
-        if bool(self.column) == bool(self.expr):
-            raise ValueError(f"filter {self.key}: set either `column` (with `op`) or `expr`, not both")
+        if sum(map(bool, (self.column, self.expr, self.exclude_when))) != 1:
+            raise ValueError(f"filter {self.key}: set exactly one of `column` (with `op`), `expr` or "
+                             "`exclude_when`")
         if self.column and self.op in ("in", "not_in") and not self.values:
             raise ValueError(f"filter {self.key}: `{self.op}` needs at least one value")
         if self.column and self.op in COMPARISONS and len(self.values) != 1:
@@ -70,8 +72,10 @@ class Filter(BaseModel):
 
     def summary(self) -> str:
         """Human-readable shape of the rule, for lists and logs."""
+        if self.exclude_when:
+            return "SQL (drop when true)"
         if self.expr:
-            return "SQL"
+            return "SQL (keep when true)"
         vals = ", ".join(self.values[:4]) + ("…" if len(self.values) > 4 else "")
         return f"{self.column} {OP_LABELS[self.op]}" + (f" {vals}" if self.values else "")
 
@@ -88,13 +92,23 @@ def _literal(dialect, column_type: str, value: str):
     return dialect.lit(value)
 
 
+def _render(ctx, sql: str) -> str:
+    # the same variables a source-of-truth query gets, so a rule can name a reference list
+    # (a CSV of ids, a lookup table) that is spelled differently in each profile
+    return jinja2.Template(sql, undefined=jinja2.StrictUndefined).render(
+        raw_table=ctx.project.table, table=ctx.project.table, **ctx.project.sql_vars).strip()
+
+
 def predicate(ctx, f: Filter) -> str:
     """SQL that is TRUE for the rows this rule keeps."""
+    if f.exclude_when:
+        # Drop only rows the condition is DEFINITELY true for. Without the COALESCE, SQL's
+        # three-valued logic turns every unknown into an exclusion: `NULL IN (...)` is NULL, so a
+        # PCO row with no id - and a row whose coverage is null - would be dropped as well, which
+        # is how one rule removed 1.1B of premium instead of 10M.
+        return f"NOT COALESCE(({_render(ctx, f.exclude_when)}), FALSE)"
     if f.expr:
-        # same variables a source-of-truth query gets, so a rule can name a reference list
-        # (a CSV of ids, a lookup table) that is spelled differently in each profile
-        return jinja2.Template(f.expr, undefined=jinja2.StrictUndefined).render(
-            raw_table=ctx.project.table, table=ctx.project.table, **ctx.project.sql_vars).strip()
+        return _render(ctx, f.expr)
     col = ctx.schema.validate([f.column])[0]
     ref, typ, d = ctx.schema.ref(col), ctx.schema.type_of(col), ctx.dialect
     if f.op == "is_null":
@@ -141,7 +155,8 @@ class FilterSet(BaseModel):
         if not act:
             return ""
         keys = sorted(f.key for f in act)
-        blob = "|".join(f"{f.key}={f.expr or (f.column, f.op, tuple(f.values))}" for f in sorted(act, key=lambda x: x.key))
+        blob = "|".join(f"{f.key}={f.exclude_when or f.expr or (f.column, f.op, tuple(f.values))}"
+                        for f in sorted(act, key=lambda x: x.key))
         return "+".join(keys) + "#" + hashlib.sha1(blob.encode("utf-8")).hexdigest()[:6]
 
     def with_all_disabled(self) -> FilterSet:

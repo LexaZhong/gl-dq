@@ -4,8 +4,8 @@
 #   DQ_PARQUET_TABLE=/Volumes/.../gl_master/*.parquet python jobs/check_setup.py --profile parquet
 #   DQ_PROFILE=parquet streamlit run app/app.py
 #
-# Column names, measures, check thresholds and the source-of-truth queries are inherited from prod,
-# so an extract is checked exactly like the table. Each view below may be a file, a folder or a glob.
+# Column names, measures and check thresholds are inherited from prod, so an extract is checked
+# exactly like the table. The view below may be a .parquet or .csv file, a folder or a glob.
 extends: prod
 
 name: GL master (parquet)
@@ -13,28 +13,13 @@ backend: parquet
 
 parquet_views:
   gl_master: ${DQ_PARQUET_TABLE:-data/extract/gl_master}
-  sot_premium: ${DQ_PARQUET_SOT_PREMIUM:-data/extract/sot_premium}   # optional: skipped if absent
-  sot_loss: ${DQ_PARQUET_SOT_LOSS:-data/extract/sot_loss}            # optional: skipped if absent
 
 table: gl_master
 sql_vars:
-  sot_premium_table: sot_premium
-  sot_loss_table: sot_loss
-  study_from: ${DQ_STUDY_FROM:-2014-01-01}
-  study_to: ${DQ_STUDY_TO:-2025-12-31}
   # DuckDB reads the reference CSV in place (no import step). Absolute path or relative to where
   # you launched the app; a folder or *.csv glob works too.
   no_pco_ids_source: "read_csv_auto('${DQ_NO_PCO_IDS_CSV:-data/reference/gl_bop_id_not_rating_pco.csv}')"
 
-# The study extract is already aggregated (the output of the prod SOT query), so the SOT query here
-# is a passthrough. Everything else - dims, tolerances, the pipeline-side `where` - is inherited
-# from prod, so a local reconciliation matches the one that runs on Databricks.
-# Point these back at sql/sot_*_prod.sql if your extract is the RAW study table.
-check_overrides:
-  premium_recon:
-    sot_query: sql/sot_premium_extract.sql
-  loss_recon:
-    sot_query: sql/sot_loss_extract.sql
 
 config_dir: ${DQ_CONFIG_DIR:-config}
 knowledge_dir: ${DQ_KNOWLEDGE_DIR:-data/knowledge_parquet}

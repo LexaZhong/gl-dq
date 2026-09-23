@@ -15,8 +15,7 @@ stored as YAML, so the knowledge carries over to other projects.
 | 📏 Business rules | SQL validity rules (date order, event inside policy period, deductible exclusivity…) |
 | 🔤 Values check | Values used by one source only, values outside plausible bounds, sentinel spikes, and medians that differ by source like a unit error |
 | 📊 Distributions | User-chosen variables and levels, percentile bins (preset or custom), log transforms, PSI, outliers, new categories |
-| 💰 Premium reconciliation | `tot_wrtn_prm_amt` vs the pricing-study source of truth by src × coverage (grain is configurable) |
-| 📉 Loss summary | `allocation` and claim count by loss year vs source of truth; severity, frequency (per exposure base) and loss ratio by segment |
+| 📉 Loss summary | *(Portfolio analysis)* loss ratio, severity and frequency (per exposure base) by segment, and the spread of policy-level loss ratios |
 | 📐 Exposure summary | `expo_amt` by `expn_bs_std`, premium per exposure, negative or zero exposure, classes on more than one base |
 | 🧩 Segment mix & credibility | *(Portfolio analysis)* **Mix & credibility**: premium, record and claim shares for any combination of up to three rating dimensions, with a Pareto and credibility Z = min(1, √(n/1082)) on claims and records — which segments drive the book, which are too thin to price. **🔬 Segment deep dive**: click a segment to see, at policy-term grain, its premium / exposure / severity / frequency distributions against the rest of the book (linear or log), its trend by policy year, how many more claims it needs to reach the credibility target, what is inside the cell, and whether one policy carries its loss |
 
@@ -82,7 +81,7 @@ empty string. Loading the CSV into a table is worth it once the list is large or
 How it reaches every query: `ctx.table_expr` renders `{{ table }}` as
 `(SELECT * FROM gl_master WHERE <filters>) AS gl`, so no SQL template changes and nothing can forget to
 apply it. Source-of-truth queries are restricted to the surviving `pol_num` + `pol_eff_dt` pairs, keeping
-both sides of a reconciliation like-for-like. Each run stores the filters it used, and the tracker warns
+the same population everywhere. Each run stores the filters it used, and the tracker warns
 when the stored findings were computed under different ones than you have on now.
 
 ## Review workflow (`config/workflow.yaml`)
@@ -126,43 +125,11 @@ DQ_PROFILE=synthetic .venv/bin/python -m streamlit run app/app.py
 `synthetic/injected_issues.yaml` lists the 18 data problems that were planted on purpose. The tests check that
 each one is flagged and that the clean dataset flags nothing.
 
-## Reconciling against the pricing study locally
-The reconciliations need the study as well as `gl_master`. Get both as files, point the `parquet`
-profile at them, and the same checks run on a laptop:
-
-```powershell
-# Windows PowerShell - forward slashes, absolute paths
-$env:DQ_PROFILE            = "parquet"
-$env:DQ_PARQUET_TABLE      = "C:/Users/you/gl-dq/data/gl_master.parquet"
-$env:DQ_PARQUET_SOT_PREMIUM= "C:/Users/you/gl-dq/data/sot_premium.csv"   # .csv or .parquet
-$env:DQ_PARQUET_SOT_LOSS   = "C:/Users/you/gl-dq/data/sot_loss.csv"      # optional
-python jobs/check_setup.py --profile parquet
-python -m streamlit run app/app.py
-```
-```bash
-# macOS / Linux
-export DQ_PROFILE=parquet DQ_PARQUET_TABLE=data/gl_master.parquet \
-       DQ_PARQUET_SOT_PREMIUM=data/sot_premium.csv
-streamlit run app/app.py
-```
-
-The study extract is the **output** of `config/sql/sot_premium_prod.sql` (one row per `src` × `pol_yr`
-with `wrtn_prm`), not the raw study table — that is what `jobs/export_extract.py` writes, and what to
-download if you run the query in the SQL editor. The `parquet` profile therefore reconciles against it
-with a passthrough (`sql/sot_premium_extract.sql`); everything else — grain, tolerances, the
-pipeline-side `where` — is inherited from `prod`, so a local reconciliation matches the Databricks one.
-If your extract is the raw study table, point `sot_query` back at `sql/sot_premium_prod.sql`.
-
-Each view may be a `.parquet` or `.csv` file, a folder or a glob. Keep the files under `data/`
-(gitignored) — the repo is public. `jobs/check_setup.py` reports a missing or mis-shaped study
-before the dashboard does.
-
 ## How it fits together
 ```
 config/profiles/<profile>.yaml   table, backend, measures, derived columns (pol_yr, loss_yr), storage locations
 config/checks/<check>.yaml       per-check settings (live copy in the UC Volume on Databricks)
 config/filters.yaml              global filters: one population for every page and the refresh job
-config/sql/sot_*.sql             source-of-truth queries  ← fill in the pricing-study SQL here
 src/gl_dq/core/                  config, db (DuckDB | Databricks SQL), schema whitelist, storage (local | Volume),
                                  knowledge store, results store, registry
 src/gl_dq/checks/<check>.py      one module per page: Config + run() + settings_ui() + render()
@@ -173,9 +140,8 @@ src/gl_dq/ui/                    Streamlit frame, notes panel, chart theme
 jobs/refresh.py                  runs all checks and appends findings (parquet locally, Delta on Databricks)
 jobs/check_setup.py              preflight: does the profile match the real table?
 jobs/export_extract.py           write a parquet extract of gl_master + the study queries
-jobs/validate_sot.py             checks a source-of-truth query and prints a comparison SQL
 notebooks/run_in_workspace.py    run the checks from a Databricks notebook (Spark backend)
-jobs/seed_volume.py              copies configs + SOT SQL into the UC volume
+jobs/seed_volume.py              copies configs into the UC volume
 .claude/skills/                  Claude Code skills (below)
 ```
 **Safety:** every column reference is checked against the table schema or configured derived columns.
@@ -225,21 +191,19 @@ sits at the repo root.
 
 **C. Parquet extract (no warehouse, no Spark, no Delta)** — create it once from a notebook or job:
 ```bash
-python jobs/export_extract.py --profile workspace          # -> <volume>/extract/{gl_master,sot_premium,sot_loss}
+python jobs/export_extract.py --profile workspace          # -> <volume>/extract/gl_master
 python jobs/export_extract.py --profile workspace --sample 200000   # a smaller share
 ```
 then point the dashboard at those files:
 ```bash
 DQ_PROFILE=parquet DQ_PARQUET_TABLE=/Volumes/.../extract/gl_master \
-  DQ_PARQUET_SOT_PREMIUM=/Volumes/.../extract/sot_premium \
-  DQ_PARQUET_SOT_LOSS=/Volumes/.../extract/sot_loss \
   python jobs/check_setup.py --profile parquet
 DQ_PROFILE=parquet DQ_PARQUET_TABLE=... streamlit run app/app.py
 ```
 Each view is a file, a folder or a glob; DuckDB reads them in place (nothing is copied). Column names,
 measures, thresholds and the source-of-truth queries are inherited from prod, so an extract is checked
 exactly like the table - a test asserts both backends produce identical findings. The study extracts are
-optional: without them everything except the two reconciliations still runs. Notebook cell 4 writes the
+Notebook cell 4 writes the
 extract.
 
 **D. From your laptop against the workspace** — the full dashboard, no deployment, only `SELECT` rights:
@@ -263,31 +227,19 @@ pip install -e ".[databricks]"              # databricks-sql-connector + sdk for
 tells you whether the config matches `gl_master` before anything else:
 ```bash
 export DATABRICKS_WAREHOUSE_ID=<sql warehouse id>   # catalog/schema/volume already default to yours
-python jobs/check_setup.py --profile prod            # verifies every configured column, source and SOT query
+python jobs/check_setup.py --profile prod            # verifies every configured column, source and filter
 DQ_PROFILE=prod DQ_CONFIG_DIR=config DQ_KNOWLEDGE_DIR=data/knowledge_prod \
   streamlit run app/app.py                           # the whole dashboard, live on gl_master
 ```
 Fix whatever preflight reports in `config/profiles/prod.yaml` (measures, derived columns, policy key,
 segment candidates) and in `config/checks/*.yaml` (candidate keys, `applies_when` predicates, business
-rules), then fill in `config/sql/sot_premium.sql` and `config/sql/sot_loss.sql` with the pricing-study
-queries. Re-run preflight until it is clean.
-
-**1b. Fill in the source-of-truth queries**
-`config/sql/sot_premium.sql` and `config/sql/sot_loss.sql` must return the reconciliation dimensions
-(named like the pipeline columns, or mapped with `dim_map`) plus the measure columns. Both files carry
-the contract and worked examples in their header. Then check them:
-```bash
-python jobs/validate_sot.py --profile prod --check both              # columns, grain, totals, biggest breaks
-python jobs/validate_sot.py --profile prod --check premium_recon --print-sql   # SQL to paste in the SQL editor
-```
-It names the exact fix when a dimension is missing (add it, drop it from `dims`, or map it), flags nulls
-in dimensions and a coarser-grained study, and prints the same numbers the dashboard will show.
+rules). Re-run preflight until it is clean.
 
 **2. Deploy the bundle** (creates the UC volume, the refresh job and the Databricks App)
 ```bash
 databricks bundle validate -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
 databricks bundle deploy   -t dev --var warehouse_id=<id> --var catalog=<cat> --var schema=<schema>
-python jobs/seed_volume.py --profile prod                      # copies configs + SOT SQL into the volume
+python jobs/seed_volume.py --profile prod                      # copies configs into the volume
 ```
 The volume copy is the live config people edit from the app; `seed_volume.py` never overwrites existing
 files unless you pass `--overwrite`.
@@ -297,7 +249,7 @@ files unless you pass `--overwrite`.
 | What | Where |
 |---|---|
 | Table | `na_actuarial_explore.consd_sb_actuarial_sandbox.gl_master` |
-| Check configs + SOT SQL | `<volume>/gl_master_cleaning/config` |
+| Check configs | `<volume>/gl_master_cleaning/config` |
 | Statuses, notes, preprocessing | `<volume>/gl_master_cleaning/knowledge` |
 | Run history (one parquet per run) | `<volume>/gl_master_cleaning/runs` |
 
@@ -308,7 +260,7 @@ catalog from the table - that is fine, nothing but the volume grant is needed th
 ```sql
 GRANT USE CATALOG ON CATALOG <cat> TO `<app-sp>`;
 GRANT USE SCHEMA, CREATE TABLE ON SCHEMA <cat>.<schema> TO `<app-sp>`;
-GRANT SELECT ON TABLE <cat>.<schema>.gl_master TO `<app-sp>`;   -- plus the SOT tables
+GRANT SELECT ON TABLE <cat>.<schema>.gl_master TO `<app-sp>`;
 GRANT READ VOLUME, WRITE VOLUME ON VOLUME <cat>.<schema>.gl_dq TO `<app-sp>`;
 ```
 Find the service principal on the app's page in the workspace (Compute → Apps → gl-dq-tracker).
@@ -323,7 +275,7 @@ the author of every note and status change. Unpause the job schedule in `databri
 `PAUSED`) once the checks are settled, so the dashboard refreshes on its own.
 
 To try it on Databricks with synthetic data first: upload the parquet files and run
-`synthetic/load_to_delta.py`, then set `DQ_TABLE`, `DQ_SOT_PREMIUM_TABLE` and `DQ_SOT_LOSS_TABLE` on the app.
+`synthetic/load_to_delta.py`, then set `DQ_TABLE` on the app.
 
 The Databricks path is not yet tested against a live workspace. The SQL is rendered with the Databricks
 dialect in `tests/test_databricks_sql.py`, but the bundle, grants and app auth still need a first real deploy.

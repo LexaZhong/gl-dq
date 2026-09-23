@@ -45,6 +45,11 @@ filters:
 
   # Rules the pickers cannot express: they ask a question about another dataset, not about the row.
   #
+  # Write these as `exclude_when` - the rows to DROP - not as `expr`, which says what to KEEP.
+  # SQL three-valued logic is the reason: `NULL IN (...)` is NULL, and an unknown predicate
+  # excludes, so a "keep" rule silently drops every row it cannot evaluate (a PCO row with no
+  # gl_bop_id, a row whose coverage is null). `exclude_when` drops only what is definitely true.
+  #
   # {{ no_pco_ids_source }} is a profile sql_var (config/profiles/*.yaml), so the same rule works
   # everywhere the list is spelled differently:
   #   parquet / duckdb   read_csv_auto('data/reference/gl_bop_id_not_rating_pco.csv')   - read in place
@@ -53,9 +58,8 @@ filters:
   #                      or a table name once the CSV is loaded: my_catalog.my_schema.gl_bop_id_not_rating_pco
   # The CSV lists the ids that do NOT rate products/completed-ops, needs a header row and a
   # gl_bop_id column; anything else in it is ignored. Both sides are cast to string, so a CSV
-  # (always text) matches a numeric id column. A PCO row whose gl_bop_id is null cannot be checked
-  # against the list and is dropped. Note a blank line in a CSV comes back as NULL, not as an empty
-  # string, so a genuinely blank id cannot be listed this way.
+  # (always text) matches a numeric id column. Note a blank line in a CSV comes back as NULL, not
+  # as an empty string, so a genuinely blank id cannot be listed this way.
   - key: pco_rows_for_ids_not_rating_pco
     label: Drop ProductsCompletedOps rows for ids that do not rate PCO
     description: >
@@ -63,11 +67,11 @@ filters:
       row - those are mapping artefacts, not exposure. The list is maintained outside the pipeline.
     enabled: false
     profiles: [prod, workspace, parquet]
-    expr: |
-      NOT (covg_type_desc = 'ProductsCompletedOps'
-           AND CAST(gl_bop_id AS STRING) IN (SELECT CAST(gl_bop_id AS STRING)
-                                             FROM {{ no_pco_ids_source }}
-                                             WHERE gl_bop_id IS NOT NULL))
+    exclude_when: |
+      covg_type_desc = 'ProductsCompletedOps'
+      AND CAST(gl_bop_id AS STRING) IN (SELECT CAST(gl_bop_id AS STRING)
+                                        FROM {{ no_pco_ids_source }}
+                                        WHERE gl_bop_id IS NOT NULL)
 
   # The same question answered from the data itself, when there is no reference list to maintain:
   # an id writes PCO business if it has PCO premium anywhere in the table. {{ raw_table }} is the
@@ -77,10 +81,11 @@ filters:
     description: Same intent as pco_rows_for_ids_not_rating_pco, derived from the table instead of a list.
     enabled: false
     profiles: [prod, workspace, parquet]
-    expr: |
-      NOT (covg_type_desc = 'ProductsCompletedOps'
-           AND gl_bop_id NOT IN (SELECT gl_bop_id
-                                 FROM {{ raw_table }}
-                                 WHERE covg_type_desc = 'ProductsCompletedOps'
-                                   AND COALESCE(tot_wrtn_prm_amt, 0) > 0
-                                   AND gl_bop_id IS NOT NULL))
+    exclude_when: |
+      covg_type_desc = 'ProductsCompletedOps'
+      AND gl_bop_id IS NOT NULL
+      AND gl_bop_id NOT IN (SELECT gl_bop_id
+                            FROM {{ raw_table }}
+                            WHERE covg_type_desc = 'ProductsCompletedOps'
+                              AND COALESCE(tot_wrtn_prm_amt, 0) > 0
+                              AND gl_bop_id IS NOT NULL)

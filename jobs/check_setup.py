@@ -3,9 +3,9 @@
     DATABRICKS_WAREHOUSE_ID=<id> python jobs/check_setup.py --profile prod --catalog <cat> --schema <schema>
     python jobs/check_setup.py --profile synthetic          # same checks against the local synthetic data
 
-Verifies the table is readable, every configured column exists (measures, derived columns, policy key,
-segment candidates, and every column named in the check configs), the source values match, and the
-source-of-truth queries run. Prints what to fix; exits non-zero if anything is missing.
+Verifies the table is readable, the global filters compile, every configured column exists
+(measures, derived columns, policy key, segment candidates, and every column named in the check
+configs) and the source values match. Prints what to fix; exits non-zero if anything is missing.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from gl_dq.core.context import load_context  # noqa: E402
-from gl_dq.core.schema import UnknownColumnError  # noqa: E402
 
 OK, BAD = "  ok   ", "  MISS "
 
@@ -32,23 +31,29 @@ def configured_columns(ctx) -> dict[str, list[str]]:
         except Exception as e:  # noqa: BLE001
             out[f"{name} (config error)"] = [f"!! {e}"]
             continue
-        cols: list[str] = []
-        d = cfg.model_dump()
-        for field in ("group_by", "dims", "segments", "summary_by", "anomaly_by", "include", "exclude",
-                      "dimensions"):  # dimensions: segment_mix rating dimensions
-            cols += [c for c in (d.get(field) or []) if isinstance(c, str)]
-        for field in ("categorical", "numeric"):  # value_checks: one entry per column
-            cols += [c for c in (d.get(field) or {}) if isinstance(c, str)]
-        cols += [d[f] for f in ("default_dimension", "time_dim", "lr_basis") if isinstance(d.get(f), str)]
-        for k in (d.get("candidate_keys") or {}).values():
-            cols += k
-        cols += list((d.get("variables") or {}).keys()) if isinstance(d.get("variables"), dict) else \
-            [v.get("name") for v in (d.get("variables") or []) if isinstance(v, dict)]
-        cols += [d.get("class_col")] if d.get("class_col") else []
-        for r in (d.get("rules") or []):
-            cols += r.get("variables") or []
-        out[name] = sorted({c for c in cols if c})
+        out[name] = sorted({c for c in _column_fields(cfg.model_dump()) if c})
     return out
+
+
+def _column_fields(d: dict) -> list[str]:
+    """Column names anywhere in one check config, nested sections included (e.g. `analytics`)."""
+    cols: list[str] = []
+    for field in ("group_by", "dims", "segments", "summary_by", "anomaly_by", "include", "exclude",
+                  "dimensions"):  # dimensions: segment_mix rating dimensions
+        cols += [c for c in (d.get(field) or []) if isinstance(c, str)]
+    for field in ("categorical", "numeric"):  # value_checks: one entry per column
+        cols += [c for c in (d.get(field) or {}) if isinstance(c, str)]
+    cols += [d[f] for f in ("default_dimension", "time_dim", "lr_basis", "class_col") if isinstance(d.get(f), str)]
+    for k in (d.get("candidate_keys") or {}).values():
+        cols += k
+    cols += list((d.get("variables") or {}).keys()) if isinstance(d.get("variables"), dict) else \
+        [v.get("name") for v in (d.get("variables") or []) if isinstance(v, dict)]
+    for r in (d.get("rules") or []):
+        cols += r.get("variables") or []
+    for key, value in d.items():  # a nested section such as loss_summary.analytics
+        if isinstance(value, dict) and key not in ("categorical", "numeric", "candidate_keys", "variables"):
+            cols += _column_fields(value)
+    return cols
 
 
 def main(argv=None):
@@ -121,16 +126,6 @@ def main(argv=None):
     print((BAD if expected != found else OK) + f" sources: configured {sorted(expected)}, in data{note} {sorted(found)}")
     if expected != found:
         problems.append(f"sources differ: only in config {sorted(expected - found)}, only in data {sorted(found - expected)}")
-
-    for check, field in [("premium_recon", "sot_query"), ("loss_recon", "sot_query")]:
-        try:
-            path = getattr(ctx.check_config(check), field)
-            sql = ctx.render_user_sql(path)
-            cols = list(ctx.db.query(ctx.render_sql("sot_columns.sql.j2", sot_sql=sql)).columns)
-            print(f"  ok    {check} source of truth ({path}): {', '.join(cols)}")
-        except Exception as e:  # noqa: BLE001
-            print(f"{BAD} {check} source of truth failed: {str(e)[:160]}")
-            problems.append(f"{check} source of truth: {str(e)[:160]}")
 
     print()
     if problems:

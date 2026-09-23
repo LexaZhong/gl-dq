@@ -41,11 +41,20 @@ def test_reports_unexpected_sources(ctx_injected, tmp_path, capsys):
     assert "only in config ['PERSONAL']" in capsys.readouterr().out
 
 
-def test_reports_a_broken_source_of_truth_query(ctx_injected, tmp_path, capsys):
-    prof = _profile(tmp_path, sql_vars={"sot_premium_table": "no_such_table", "sot_loss_table": "sot_loss_synth"})
+def test_reports_a_broken_global_filter(ctx_injected, tmp_path, capsys):
+    """A filter that does not compile must be named by preflight, not break every page later."""
+    prof = _profile(tmp_path, config_dir=str(tmp_path / "cfg"))
+    cfg = tmp_path / "cfg"
+    (cfg / "checks").mkdir(parents=True)
+    for f in (ROOT / "config" / "checks").glob("*.yaml"):
+        (cfg / "checks" / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+    (cfg / "workflow.yaml").write_text((ROOT / "config" / "workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    (cfg / "filters.yaml").write_text(
+        'filters:\n  - key: broken\n    enabled: true\n    exclude_when: "no_such_column = 1"\n',
+        encoding="utf-8")
     with pytest.raises(SystemExit):
         check_setup.main(["--profile", prof])
-    assert "premium_recon source of truth failed" in capsys.readouterr().out
+    assert "filter broken" in capsys.readouterr().out
 
 
 def test_spark_backend_uses_the_session(monkeypatch):
@@ -104,10 +113,7 @@ def test_export_extract_writes_the_expected_paths(ctx_injected, monkeypatch, cap
 
     monkeypatch.setattr(ctx_injected, "db", type("D", (), {"spark": FakeSpark()})(), raising=False)
     written = export_extract.export(ctx_injected, "/Volumes/vol/GL/gl_master_cleaning/extract", sample=1000)
-    assert written["gl_master"].endswith("/extract/gl_master")
-    assert set(written) == {"gl_master", "sot_premium", "sot_loss"}
-    assert any(c.endswith("/extract/sot_premium") for c in calls)
-    assert any(c.endswith("/extract/sot_loss") for c in calls)
+    assert written == {"gl_master": "/Volumes/vol/GL/gl_master_cleaning/extract/gl_master"}
     assert any("LIMIT 1000" in c for c in calls)
 
 
@@ -147,7 +153,7 @@ def test_every_column_a_check_config_names_is_checked(ctx_injected):
     assert set(ctx_injected.check_config("segment_mix").dimensions) <= set(cols["segment_mix"])
     vc = ctx_injected.check_config("value_checks")
     assert set(vc.categorical) | set(vc.numeric) <= set(cols["value_checks"])
-    assert ctx_injected.check_config("loss_recon").time_dim in cols["loss_recon"]
+    assert ctx_injected.check_config("loss_summary").analytics.lr_basis in cols["loss_summary"]
     for name, names in cols.items():
         for c in names:
             assert ctx_injected.schema.has(c), f"{name} references {c}, which is not in the table"

@@ -46,21 +46,9 @@ issues:
     description: New class code 99999 appears only in policy year 2023 (2% of rows).
     expect: {check: distribution, variable: class_cd_std, metric: new_categories, segment: {pol_yr: "2023"}}
 
-  - id: prem_sot_cmq_liquor
-    description: Source of truth CMQ Liquor Liability premium is 3% higher than pipeline.
-    expect: {check: premium_recon, segment: {src: CMQ, covg_type_desc: Liquor Liability}}
 
-  - id: prem_bop_2020_medpay_missing
-    description: BOP policy-year 2020 Medical Payments rows are missing from the pipeline.
-    expect: {check: premium_recon, segment: {src: BOP, covg_type_desc: Medical Payments}}
 
-  - id: loss_bop_2021_short
-    description: BOP loss-year 2021 allocation is 5% short vs source of truth.
-    expect: {check: loss_recon, item: loss, segment: {src: BOP, loss_yr: "2021"}}
 
-  - id: loss_bmq_2022_claims_double
-    description: BMQ loss-year 2022 claim counts are double counted.
-    expect: {check: loss_recon, item: claim_count, segment: {src: BMQ, loss_yr: "2022"}}
 
   - id: values_limit_only_in_bmq
     description: An each-occurrence limit of 10M is used by BMQ only, not by BOP or CMQ.

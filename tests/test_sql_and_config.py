@@ -50,11 +50,10 @@ def test_prod_profile_parses(monkeypatch):
     assert p.table == "pricing_cat.gl.gl_master" and p.backend == "databricks"
     # config/knowledge/run history follow DQ_VOLUME_DIR, not the table's catalog
     assert p.config_dir.endswith("/gl_master_cleaning/config")
-    assert p.sql_vars["sot_premium_table"] == "cimm_csm.premium_transx_seg_enriched_2026q2"  # the pricing study
-    assert p.sql_vars["study_from"] == "2014-01-01" and p.sql_vars["study_to"] == "2025-12-31"
     assert p.measures.claim_count == "claim_cnt"
-    monkeypatch.setenv("DQ_SOT_PREMIUM_TABLE", "other.study.table")  # still overridable per environment
-    assert load_project("prod").sql_vars["sot_premium_table"] == "other.study.table"
+    assert "gl_bop_id_not_rating_pco.csv" in p.sql_vars["no_pco_ids_source"]  # reference list for filters.yaml
+    monkeypatch.setenv("DQ_NO_PCO_IDS_TABLE", "other.cat.pco_ids")  # still overridable per environment
+    assert load_project("prod").sql_vars["no_pco_ids_source"] == "other.cat.pco_ids"
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "config" / "checks").glob("*.yaml")), ids=lambda p: p.stem)
@@ -80,11 +79,10 @@ def test_config_roundtrip(ctx_injected, tmp_path):
 
 def test_page_order_and_sections(ctx_injected):
     assert ctx_injected.enabled_checks() == ["key_uniqueness", "missing_rate", "business_rules", "value_checks",
-                                             "distribution", "premium_recon", "loss_recon", "exposure",
-                                             "segment_mix"]
+                                             "distribution", "exposure", "loss_summary", "segment_mix"]
     sections = ctx_injected.checks_by_category()
     assert list(sections) == ["Checks", "Portfolio analysis"]          # order of first appearance
-    assert sections["Portfolio analysis"] == ["segment_mix"]
+    assert sections["Portfolio analysis"] == ["loss_summary", "segment_mix"]
     assert sections["Checks"][:4] == ["key_uniqueness", "missing_rate", "business_rules", "value_checks"]
 
 

@@ -3,7 +3,7 @@
     python synthetic/generate.py --n-policies 20000 --seed 42 --out data/
     python synthetic/generate.py --no-inject --out data/clean/
 
-Writes <out>/gl_synth.duckdb (tables gl_master_synth, sot_premium_synth, sot_loss_synth)
+Writes <out>/gl_synth.duckdb (table gl_master_synth)
 and one parquet file per table. SOT tables are built from the clean data *before*
 the issues in injected_issues.yaml are injected.
 """
@@ -222,30 +222,11 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     return out
 
 
-def build_sot(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    prem = (df.assign(pol_yr=df["pol_eff_dt"].dt.year)
-              .groupby(["src", "covg_type_desc", "pol_yr"], as_index=False)["tot_wrtn_prm_amt"].sum()
-              .rename(columns={"tot_wrtn_prm_amt": "wrtn_prm"}))
-    claims = df[df["evt_dt"].notna()]
-    loss = (claims.assign(loss_yr=claims["evt_dt"].dt.year)
-                  .groupby(["src", "covg_type_desc", "loss_yr"], as_index=False)[["allocation", "claim_cnt"]].sum())
-    return prem, loss
-
-
-def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Generator):
+def inject_issues(df: pd.DataFrame, rng: np.random.Generator):
     df = df.copy()
-    sot_prem = sot_prem.copy()
     pick = lambda idx, k: rng.choice(np.asarray(idx), size=min(k, len(idx)), replace=False)  # noqa: E731
     pol_yr = df["pol_eff_dt"].dt.year
 
-    # recon issues first (they reference clean values)
-    liquor = sot_prem["src"].eq("CMQ") & sot_prem["covg_type_desc"].eq("Liquor Liability")
-    sot_prem.loc[liquor, "wrtn_prm"] *= 1.03
-    df = df[~(df["src"].eq("BOP") & pol_yr.eq(2020) & df["covg_type_desc"].eq("Medical Payments"))].copy()
-    loss_yr = df["evt_dt"].dt.year
-    df.loc[df["src"].eq("BOP") & loss_yr.eq(2021), "allocation"] *= 0.95
-    df.loc[df["src"].eq("BMQ") & loss_yr.eq(2022), "claim_cnt"] *= 2
-    pol_yr = df["pol_eff_dt"].dt.year
 
     # key issues
     bmq_nc = df.index[df["src"].eq("BMQ") & df["claim_cnt"].eq(0)]
@@ -301,7 +282,7 @@ def inject_issues(df: pd.DataFrame, sot_prem: pd.DataFrame, rng: np.random.Gener
     df.loc[ev, "evt_dt"] = df.loc[ev, "pol_eff_dt"] - pd.Timedelta(days=20)
 
     df = pd.concat([df, dups], ignore_index=True)
-    return df.reset_index(drop=True), sot_prem
+    return df.reset_index(drop=True)
 
 
 def write_outputs(out: Path, tables: dict[str, pd.DataFrame]) -> Path:
@@ -333,11 +314,8 @@ def main(argv=None):
 
     rng = np.random.default_rng(args.seed)
     clean = generate_clean(args.n_policies, rng)
-    sot_prem, sot_loss = build_sot(clean)
-    df = clean
-    if not args.no_inject:
-        df, sot_prem = inject_issues(clean, sot_prem, rng)
-    path = write_outputs(args.out, {"gl_master_synth": df, "sot_premium_synth": sot_prem, "sot_loss_synth": sot_loss})
+    df = clean if args.no_inject else inject_issues(clean, rng)
+    path = write_outputs(args.out, {"gl_master_synth": df})
     print(f"wrote {len(df):,} rows ({df['src'].value_counts().to_dict()}) -> {path}")
 
 
