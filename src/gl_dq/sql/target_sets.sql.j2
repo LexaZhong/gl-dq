@@ -1,0 +1,24 @@
+{# The grand total, every one-way and every two-way, in one pass over the table.
+
+   GROUPING SETS does the work a dozen separate GROUP BYs would, and GROUPING(<col>) says whether a
+   NULL in the output is "aggregated over this column" (1) or "this column really is null" (0) -
+   a distinction that matters here, because a null level is itself a finding.
+
+   Every measure is a SUM, so levels can be folded together afterwards (top N plus <other>) without
+   going back to the warehouse. #}
+SELECT
+{% for v in vars %}
+  {{ sel(v) }},
+  GROUPING({{ c(v) }}) AS {{ q("g__" ~ v) }},
+{% endfor %}
+  COUNT(*) AS records,
+  SUM({{ premium }}) AS premium,
+  SUM({{ loss }}) AS loss,
+  SUM({{ claims }}) AS claims,
+  SUM({{ exposure }}) AS exposure
+FROM {{ table }}
+{% if where %}WHERE {{ where }}{% endif %}
+GROUP BY GROUPING SETS (
+  {% for s in sets %}({% for v in s %}{{ c(v) }}{{ ", " if not loop.last }}{% endfor %}){{ "," if not loop.last }}
+  {% endfor %}
+)

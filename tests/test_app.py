@@ -6,7 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "app.py")
 PAGES = ["summary", "tracker", "preprocessing", "knowledge", "key_uniqueness", "missing_rate", "distribution",
-         "exposure", "business_rules", "value_checks", "segment_mix"]
+         "exposure", "business_rules", "value_checks", "segment_mix", "target_analysis"]
 
 
 @pytest.fixture(scope="module")

@@ -1,0 +1,13 @@
+enabled: true
+order: 85
+category: Portfolio analysis
+# Rating variables offered on the page, and used by the refresh job. Every pair of them is tested
+# for interaction in the same query, so adding one costs nothing extra.
+variables: [src, covg_type_desc, expn_bs_std]
+default_target: loss_ratio   # frequency | severity | loss_cost | loss_ratio
+max_levels: 12               # levels charted per variable; the rest fold into <other>
+min_claims: 10               # a cell with fewer claims is shown greyed and left out of the measures
+full_credibility: 1082       # claims for Z = 1 (square-root rule)
+spread_warn: 3.0             # flag a variable whose credible levels vary more than this (max/min)
+interaction_warn: 0.15       # flag a pair whose weighted RMS log deviation exceeds this (~16%)
+# where: "src IN ('BMQ', 'CMQ')"
