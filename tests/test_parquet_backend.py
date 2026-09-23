@@ -1,5 +1,4 @@
 """backend: parquet - the same checks, reading parquet files instead of a table."""
-import re
 
 import pandas as pd
 import pytest

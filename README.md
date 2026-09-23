@@ -8,14 +8,13 @@ stored as YAML, so the knowledge carries over to other projects.
 |---|---|
 | 📋 Portfolio summary (front page) | What is in the table: records, policy count (distinct `pol_num` + `pol_eff_dt` + `pol_exp_dt`), written premium, loss and claim count — as headline numbers and by `src` × `covg_type_desc` or any other level, with loss ratio and severity per segment, data tables and CSV export |
 | 🧭 Cleaning tracker | Workflow board (columns per stage and who they're waiting on), closed vs to go, progress by check, bulk assign, activity, run history |
-| 🧰 Preprocessing | Recommended preprocessing steps for columns handled in modeling; exports `preprocessing_spec.yaml` |
+| 🧰 Preprocessing | The whole modeling handover in one file: value mappings and standardizations from the values check, binning schemes from target analysis, and the steps recorded per column — ordered so a mapping can never run after the binning that depends on it. **⬇️ Pipeline (JSON)** |
 | 📚 Knowledge base | Search notes, see edit history, export a Markdown data dictionary |
 | 🔑 Key uniqueness | Is the key unique per source and across the whole table? Greedy key suggestion |
 | 🔲 Missing rate | Missing share per variable × level, with per-variable thresholds, sentinels and `applies_when` |
 | 📏 Business rules | SQL validity rules (date order, deductible exclusivity…) |
-| 🔤 Values check | Values used by one source only, values outside plausible bounds, sentinel spikes, and medians that differ by source like a unit error |
+| 🔤 Values check | Values used by one source only, values outside plausible bounds, sentinel spikes, and medians that differ by source like a unit error. **🧹 Standardize & map** turns what the matrix shows into a rule: trim, case, left-pad, cast, and a value mapping edited against the values actually in the data, with the effect (distinct values before → after, rows changed) shown before saving. Saved to `config/transforms.json`; a switch applies them to every page, off by default |
 | 📊 Distributions | User-chosen variables and levels, percentile bins (preset or custom), log transforms, PSI, outliers, new categories |
-| 📐 Exposure summary | `expo_amt` by `expn_bs_std`, premium per exposure, negative or zero exposure, classes on more than one base |
 | 🎯 Target analysis | *(Portfolio analysis)* pick a target — **frequency**, **severity**, **loss cost** or **loss ratio** — and see each rating variable's one-way: the target as a line over the weight as bars (weight selectable), with credibility and relativity against the portfolio. **🧪 Binning** cuts a numeric variable by quantile, equal width or custom cut points; a scheme is saved by name with its *resolved* cuts, scored against the current target, compared with every other scheme for that variable, and can be adopted into the column's recommended preprocessing. **🔀 Interactions** ranks every pair by how far it departs from what the two one-ways predict alone, with the interaction plot and a lift heatmap. One `GROUPING SETS` query returns the total, every one-way and every two-way |
 | 🧩 Segment mix & credibility | *(Portfolio analysis)* **Mix & credibility**: premium, record and claim shares for any combination of up to three rating dimensions, with a Pareto and credibility Z = min(1, √(n/1082)) on claims and records — which segments drive the book, which are too thin to price. **🔬 Segment deep dive**: click a segment to see, at policy-term grain, its premium / exposure / severity / frequency distributions against the rest of the book (linear or log), its trend by policy year, how many more claims it needs to reach the credibility target, what is inside the cell, and whether one policy carries its loss |
 
@@ -131,6 +130,7 @@ config/profiles/<profile>.yaml   table, backend, measures, derived columns (pol_
 config/checks/<check>.yaml       per-check settings (live copy in the UC Volume on Databricks)
 config/filters.yaml              global filters: one population for every page and the refresh job
 config/binnings.yaml             named binning schemes, with frozen cut points and provenance
+config/transforms.json           value mappings + field standardizations, read by the modeling pipeline
 src/gl_dq/core/                  config, db (DuckDB | Databricks SQL), schema whitelist, storage (local | Volume),
                                  knowledge store, results store, registry
 src/gl_dq/checks/<check>.py      one module per page: Config + run() + settings_ui() + render()

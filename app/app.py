@@ -46,6 +46,12 @@ with st.sidebar:
             for f in active:
                 st.caption(f"**{f.title}** · `{f.summary()}`")
             st.caption("Edit them on 📋 Portfolio summary.")
+    tx = ctx.transforms
+    if tx.apply_to_dashboard and tx.active():
+        with st.expander(f"🧹 {len(tx.active())} transform(s) applied", expanded=False):
+            for t_ in tx.active():
+                st.caption(f"**{t_.column}** · {t_.summary()}")
+            st.caption("Every page shows standardized values. Edit them on 🔤 Values check.")
 
 
 def _page_fn(name):

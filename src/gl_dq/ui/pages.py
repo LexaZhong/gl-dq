@@ -12,6 +12,7 @@ from gl_dq.core.config import dump_yaml
 from gl_dq.core.filters import OP_LABELS, Filter, FilterSet
 from gl_dq.core.filters import validate as validate_filter
 from gl_dq.core.knowledge import ConflictError, export_markdown, preprocessing_spec
+from gl_dq.core.transforms import preprocessing_json
 from gl_dq.core.results import STATUS_ICON, parse_segment, split_segment_columns
 from gl_dq.summary import filter_clause
 from gl_dq.tracker import build_tracker, snapshots_for
@@ -553,8 +554,10 @@ def preprocessing_page():
     ctx = state.get_context()
     wf = ctx.workflow
     st.title("🧰 Recommended preprocessing")
-    st.caption("Columns left as is in the data and handled in the modeling pipeline. The steps are exported as a "
-               "machine-readable spec (`preprocessing_spec.yaml`) that the preprocessing pipeline can be built from.")
+    st.caption("Everything the modeling pipeline has to do before fitting: the value mappings and field "
+               "standardizations agreed on the values check, the binning schemes chosen on target analysis, and "
+               "the steps recorded against each column here. **⬇️ Pipeline (JSON)** is the one file to hand over - "
+               "every column's steps, in the order they must run.")
     pre_keys = [s.key for s in wf.stages if s.requires_preprocessing]
     records = ctx.knowledge.all()
     spec = preprocessing_spec(records, wf, ctx.project.table)
@@ -580,15 +583,30 @@ def preprocessing_page():
         st.info("No columns are in a preprocessing stage yet. Pick a column below and add a step, or choose "
                 "“Preprocess in modeling” in the notes panel of any check page.")
 
+    pipeline = preprocessing_json(ctx)
+    pipeline_text = json.dumps(pipeline, indent=2)
+    n_steps = sum(len(v["steps"]) for v in pipeline["columns"].values())
+    st.markdown(f"**Modeling pipeline** — {len(pipeline['columns'])} column(s), {n_steps} step(s), "
+                f"applied in this order: `{' → '.join(pipeline['step_order'][:5])} → …`")
+    if pipeline["columns"]:
+        st.dataframe(pd.DataFrame([{"column": c, "steps": len(v["steps"]),
+                                    "pipeline": " → ".join(s["op"] for s in v["steps"]),
+                                    "note": v.get("note", "")}
+                                   for c, v in pipeline["columns"].items()]),
+                     hide_index=True, use_container_width=True)
+    with st.expander("The JSON the modeling pipeline reads"):
+        st.code(pipeline_text, language="json")
+
     c1, c2, c3 = st.columns(3)
     yaml_text = dump_yaml(spec)
-    c1.download_button("⬇️ Spec (YAML)", yaml_text, file_name="preprocessing_spec.yaml", mime="text/yaml",
+    c1.download_button("⬇️ Pipeline (JSON)", pipeline_text, file_name="preprocessing_pipeline.json",
+                       mime="application/json", use_container_width=True, type="primary")
+    c2.download_button("⬇️ Review spec (YAML)", yaml_text, file_name="preprocessing_spec.yaml", mime="text/yaml",
                        use_container_width=True)
-    c2.download_button("⬇️ Spec (JSON)", json.dumps(spec, indent=2), file_name="preprocessing_spec.json",
-                       mime="application/json", use_container_width=True)
     if c3.button("📤 Publish to knowledge store", use_container_width=True):
         ctx.knowledge.storage.write_text("exports/preprocessing_spec.yaml", yaml_text)
-        st.toast("Published exports/preprocessing_spec.yaml", icon="📤")
+        ctx.knowledge.storage.write_text("exports/preprocessing_pipeline.json", pipeline_text)
+        st.toast("Published exports/preprocessing_pipeline.json", icon="📤")
 
     st.divider()
     names = ctx.schema.names(include_derived=False)

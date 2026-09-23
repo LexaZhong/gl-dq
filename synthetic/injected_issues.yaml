@@ -55,13 +55,7 @@ issues:
     description: 1.5% of BOP bi_ded_amt rows carry the sentinel 99999, far outside the real ladder.
     expect: {check: value_checks, variable: bi_ded_amt, metric: pct_out_of_bounds, segment: {src: BOP}}
 
-  - id: expo_class_mixed_base
-    description: The most common class code has 30% of rows on a different exposure base.
-    expect: {check: exposure, variable: expn_bs_std, metric: n_classes_multi_base}
 
-  - id: expo_zero_positive_prem
-    description: 50 rows with zero expo_amt but positive premium.
-    expect: {check: exposure, variable: expo_amt, metric: pct_zero_expo_pos_prem}
 
   - id: date_exp_before_eff
     description: 15 policies with pol_exp_dt before pol_eff_dt.

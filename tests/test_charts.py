@@ -96,11 +96,12 @@ def _x_order(fig):
     return list(dict.fromkeys(str(x) for tr in fig.data for x in tr.x))
 
 
-def test_exposure_charts_order_their_levels(ctx_injected):
-    """The rendered exposure charts must pin the axis order, not rely on the frame."""
+def test_rendered_charts_pin_their_axis_order(ctx_injected):
+    """Every chart whose x axis is a data level must pass category_orders, not trust the frame."""
     import inspect
 
-    from gl_dq.checks.exposure import Exposure
+    from gl_dq.checks.target_analysis import TargetAnalysis
+    from gl_dq.ui import pages
 
-    src = inspect.getsource(Exposure.render)
-    assert src.count("category_orders=orders") == 2, "both exposure charts need a pinned axis order"
+    assert "category_orders=orders" in inspect.getsource(pages.summary_page)
+    assert "categoryarray=order" in inspect.getsource(TargetAnalysis._render_univariate)

@@ -230,6 +230,7 @@ class ValueChecks(Check):
         from gl_dq.ui.theme import SEQ_SCALE, style
 
         f = result.findings
+        self._apply_switch(st)
         tab_c, tab_n = st.tabs(["Across sources (categorical)", "Plausibility (numeric)"])
         with tab_c:
             cats = list(self.cfg.categorical)
@@ -263,6 +264,7 @@ class ValueChecks(Check):
                     st.plotly_chart(style(fig, height=max(300, 20 * len(top) + 120),
                                           title=f"{col}: share of each source's rows"),
                                     use_container_width=True)
+                    self._transform_editor(st, col, wide)
         with tab_n:
             if not self.cfg.numeric:
                 st.info("No numeric columns configured.")
@@ -274,3 +276,102 @@ class ValueChecks(Check):
                 col = st.selectbox("Column detail", list(self.cfg.numeric), key="vc_ncol")
                 st.dataframe(result.tables.get(f"numeric::{col}", pd.DataFrame()), hide_index=True,
                              use_container_width=True)
+
+    def _apply_switch(self, st):
+        """Saved transforms are a handover to modelling by default; this makes them live here too."""
+        from gl_dq.core.transforms import save_transforms
+        from gl_dq.ui import state
+
+        lib = state.session_transforms()
+        if not lib.active():
+            return
+        c1, c2 = st.columns([1.5, 3])
+        on = c1.toggle("Apply to the dashboard", lib.apply_to_dashboard, key="vc_apply",
+                       help="Off: every page reads the raw table and this check keeps reporting the "
+                            "inconsistencies. On: every page reads the standardized, mapped values - the "
+                            "data as the model will see it.")
+        c2.markdown("<div style='padding-top:0.55rem'>"
+                    + " · ".join(f"<code>{t_.column}</code> {t_.summary()}" for t_ in lib.active())
+                    + "</div>", unsafe_allow_html=True)
+        if on != lib.apply_to_dashboard:
+            lib2 = lib.model_copy(update={"apply_to_dashboard": on})
+            state.set_session_transforms(lib2)
+            save_transforms(self.ctx.config_store, lib2)
+            state.clear_data_caches()
+            st.rerun()
+
+    # ---- standardize and map -------------------------------------------------------------
+    def _transform_editor(self, st, col, wide):
+        """Turn what the matrix just showed into a rule: standardize the field, map the spellings.
+
+        The preview is computed on the observed values, so the effect - how many distinct values
+        collapse, how many rows move - is visible before anything is saved.
+        """
+        from gl_dq.core.transforms import ColumnTransform, Standardize, apply_series, save_transforms
+        from gl_dq.ui import state
+
+        lib = state.session_transforms()
+        current = lib.get(col) or ColumnTransform(column=col)
+        counts = wide.sum(axis=1).sort_values(ascending=False)
+
+        with st.expander(f"🧹 Standardize & map `{col}`" + (f" — {current.summary()}" if current.active else ""),
+                         expanded=False):
+            st.caption("Mechanical fixes first, then the vocabulary. Saved to `config/transforms.json`, "
+                       "which the modelling pipeline reads - nothing here rewrites the table.")
+            c1, c2, c3, c4 = st.columns(4)
+            std = Standardize(
+                trim=c1.checkbox("Trim spaces", current.standardize.trim, key=f"vc_tr_{col}"),
+                case=c2.selectbox("Case", ["none", "upper", "lower", "title"],
+                                  index=["none", "upper", "lower", "title"].index(current.standardize.case),
+                                  key=f"vc_ca_{col}"),
+                zero_pad=int(c3.number_input("Left-pad zeros to", 0, 32, current.standardize.zero_pad,
+                                             key=f"vc_zp_{col}", help="0 = leave the width alone")),
+                cast=c4.selectbox("Type", ["none", "string", "int", "float"],
+                                  index=["none", "string", "int", "float"].index(current.standardize.cast),
+                                  key=f"vc_cs_{col}"))
+
+            # the mapping is edited against the values actually in the data, with their row counts
+            after_std = apply_series(list(counts.index), ColumnTransform(column=col, standardize=std))
+            editor = pd.DataFrame({"value": list(counts.index), "rows": counts.to_numpy(),
+                                   "standardized": after_std.astype("string").fillna(""),
+                                   "map to": [current.mapping.get(str(v), "") for v in counts.index]})
+            st.markdown("**Map values** — fill in `map to` for the spellings that mean the same thing; "
+                        "leave it blank to keep the value as it is.")
+            edited = st.data_editor(editor, hide_index=True, use_container_width=True, height=280,
+                                    key=f"vc_map_{col}",
+                                    column_config={"value": st.column_config.TextColumn(disabled=True),
+                                                   "rows": st.column_config.NumberColumn(disabled=True,
+                                                                                         format="localized"),
+                                                   "standardized": st.column_config.TextColumn(disabled=True),
+                                                   "map to": st.column_config.TextColumn()})
+            unmapped = st.radio("Values the mapping does not name", ["keep", "other", "null"], horizontal=True,
+                                index=["keep", "other", "null"].index(current.unmapped), key=f"vc_um_{col}",
+                                help="keep leaves them as they are; other collapses them into <other>; "
+                                     "null makes them missing, which the missing-rate check will then see")
+            # map from the STANDARDIZED value: standardizing runs first, so one entry covers every spelling
+            mapping = {str(r["standardized"]): str(r["map to"]).strip()
+                       for _, r in edited.iterrows() if str(r["map to"]).strip()}
+            draft = ColumnTransform(column=col, standardize=std, mapping=mapping, unmapped=unmapped,
+                                    description=st.text_input("Why", current.description, key=f"vc_wy_{col}",
+                                                              placeholder="Agreed vocabulary for the exposure base"))
+
+            before = pd.Series(list(counts.index), dtype="object")
+            after = apply_series(before, draft).astype("string")
+            moved = int(counts[[str(b) != str(a) for b, a in zip(before, after)]].sum())
+            st.info(f"**{before.nunique():,} distinct values → {after.nunique():,}** · "
+                    f"{moved:,} of {int(counts.sum()):,} rows change value")
+
+            b1, b2, b3 = st.columns([1.3, 1.2, 3])
+            if b1.button("💾 Save", key=f"vc_sv_{col}", type="primary", disabled=not draft.active):
+                lib2 = lib.put(draft.stamped(state.current_user()))
+                state.set_session_transforms(lib2)
+                save_transforms(self.ctx.config_store, lib2)
+                st.toast(f"Saved transform for {col}", icon="🧹")
+                st.rerun()
+            if b2.button("🗑 Remove", key=f"vc_rm_{col}", disabled=lib.get(col) is None):
+                lib2 = lib.drop(col)
+                state.set_session_transforms(lib2)
+                save_transforms(self.ctx.config_store, lib2)
+                st.rerun()
+            if current.active and current.updated:
+                b3.caption(f"Saved by {current.author} on {current.updated[:10]} · `{current.summary()}`")

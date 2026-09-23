@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from gl_dq.core.context import load_context
 from gl_dq.core.binning import BinningLibrary, BinningSet, BinSpec, load_binnings
 from gl_dq.core.filters import FilterSet
+from gl_dq.core.transforms import TransformLibrary, load_transforms
 
 
 def profile() -> str:
@@ -98,6 +99,17 @@ def reset_session_config(name: str) -> None:
     st.session_state.pop(f"cfg::{name}", None)
     for k in st.session_state.pop(f"widgets::{name}", []):
         st.session_state.pop(k, None)
+
+
+# ---- column transforms (standardize + value mappings) --------------------------------
+def session_transforms() -> TransformLibrary:
+    if "transform_library" not in st.session_state:
+        st.session_state["transform_library"] = load_transforms(_context(profile()).config_store)
+    return st.session_state["transform_library"]
+
+
+def set_session_transforms(lib: TransformLibrary) -> None:
+    st.session_state["transform_library"] = lib
 
 
 # ---- binning schemes (the library on disk, plus what this session has in play) --------

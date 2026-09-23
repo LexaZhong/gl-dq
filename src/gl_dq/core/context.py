@@ -17,6 +17,7 @@ from gl_dq.core.registry import discover
 from gl_dq.core.results import DeltaResults, ParquetResults, ResultsStore
 from gl_dq.core.schema import TableSchema
 from gl_dq.core.storage import Storage, make_storage
+from gl_dq.core.transforms import TransformLibrary, load_transforms, save_transforms, sql_expr
 from gl_dq.core.workflow import Workflow, load_workflow
 
 
@@ -32,6 +33,7 @@ class Context:
     checks: dict[str, type] = field(default_factory=dict)
     workflow: Workflow = field(default_factory=Workflow)
     filters: FilterSet = field(default_factory=FilterSet)
+    transforms: TransformLibrary = field(default_factory=TransformLibrary)
 
     def __post_init__(self):
         self._jinja = jinja2.Environment(
@@ -45,14 +47,28 @@ class Context:
 
     @property
     def table_expr(self) -> str:
-        """The table every query reads: the real table, or a subquery with the global filters.
+        """The table every query reads: the real table, or a subquery that cleans and filters it.
 
         `project.table` stays the real name (DESCRIBE, error messages, the preprocessing spec);
         this is what `{{ table }}` renders to. Every packaged template uses `FROM {{ table }}`
         bare, with no alias and no alias-qualified columns, so a subquery drops straight in.
+
+        Transforms sit inside the filters, so a rule like "US states only" is written against the
+        standardized value rather than whichever spelling the source happened to use.
         """
+        source = self._transformed_source()
         where = self.filters.where(self)
-        return self.project.table if not where else f"(SELECT * FROM {self.project.table} WHERE {where}) AS gl"
+        return source if not where else f"(SELECT * FROM {source} WHERE {where}) AS gl"
+
+    def _transformed_source(self) -> str:
+        """The table with every active column transform applied, or just the table."""
+        lib = self.transforms
+        if not lib.apply_to_dashboard or not lib.active():
+            return self.project.table
+        by_col = {t.column: t for t in lib.active() if self.schema.has(t.column)}
+        cols = [f"{sql_expr(self.schema, self.dialect, by_col[c])} AS {self.dialect.quote(c)}"
+                if c in by_col else self.dialect.quote(c) for c in self.schema.columns]
+        return f"(SELECT {', '.join(cols)} FROM {self.project.table}) AS tx"
 
     def render_sql(self, template: str, **kw) -> str:
         """Render a packaged SQL template with column helpers available as c(), sel(), lit()."""
@@ -81,6 +97,11 @@ class Context:
         raw = yaml.safe_load(text) if text else {}
         raw = deep_merge(raw or {}, self.project.check_overrides.get(name, {}))
         return cls.Config.model_validate(raw)
+
+    def save_transforms(self, lib: TransformLibrary) -> None:
+        """Write config/transforms.json - the mappings the modelling pipeline will read."""
+        save_transforms(self.config_store, lib)
+        self.transforms = lib
 
     def save_filters(self, fs: FilterSet) -> None:
         """Write config/filters.yaml, so every session and the refresh job see the same rules."""
@@ -123,4 +144,5 @@ def load_context(profile: str | None = None) -> Context:
         results = ParquetResults(make_storage(project.results.path, REPO_ROOT))
     checks = discover(project.plugins)
     return Context(profile, project, db, schema, config_store, knowledge, results, checks,
-                   load_workflow(config_store), load_filters(config_store))
+                   load_workflow(config_store), load_filters(config_store),
+                   load_transforms(config_store))

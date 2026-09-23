@@ -6,7 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "app.py")
 PAGES = ["summary", "tracker", "preprocessing", "knowledge", "key_uniqueness", "missing_rate", "distribution",
-         "exposure", "business_rules", "value_checks", "segment_mix", "target_analysis"]
+         "business_rules", "value_checks", "segment_mix", "target_analysis"]
 
 
 @pytest.fixture(scope="module")
@@ -203,3 +203,36 @@ def test_binning_workbench_saves_a_scheme_with_frozen_cuts(refreshed, monkeypatc
         assert saved[0]["author"] and saved[0]["created"]
     finally:
         state.clear_data_caches()  # leave the shared context pointing back at the repo config
+
+
+def test_values_check_saves_a_transform_and_can_apply_it(refreshed, monkeypatch, tmp_path):
+    """The values check is where a mapping is written: it must show the effect first, save to JSON
+    with provenance, and not change any other page until the apply switch is turned on."""
+    import json as _json
+    import shutil
+
+    from gl_dq.ui import state
+
+    cfg = tmp_path / "config"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "config", cfg)
+    monkeypatch.setenv("DQ_CONFIG_DIR", str(cfg))
+    state.clear_data_caches()
+    try:
+        at = _open("value_checks", monkeypatch)
+        at.selectbox(key="vc_col").set_value("expn_bs_std").run()
+        at.checkbox(key="vc_tr_expn_bs_std").set_value(True).run()
+        at.selectbox(key="vc_ca_expn_bs_std").set_value("upper").run()
+        assert any("rows change value" in i.value for i in at.info), "the effect must be shown before saving"
+
+        next(b for b in at.button if b.key == "vc_sv_expn_bs_std").click().run()
+        assert not at.exception, [e.value for e in at.exception]
+        saved = _json.loads((cfg / "transforms.json").read_text(encoding="utf-8"))
+        assert saved["apply_to_dashboard"] is False, "saving a mapping must not silently change every page"
+        assert saved["transforms"][0]["standardize"]["case"] == "upper"
+        assert saved["transforms"][0]["author"] and saved["transforms"][0]["updated"]
+
+        # the switch that makes it live is on the page; what it does to every query is covered by
+        # tests/test_transforms.py, which drives the Context directly
+        assert any(tg.key == "vc_apply" for tg in at.toggle)
+    finally:
+        state.clear_data_caches()
