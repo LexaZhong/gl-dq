@@ -191,9 +191,6 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     sev[tail] *= rng.pareto(1.8, tail.sum()) + 1
     rows["claim_cnt"] = claim_cnt
     rows["allocation"] = np.round(np.bincount(claim_row, weights=sev, minlength=len(rows)), 2)
-    span = (rows["pol_exp_dt"] - rows["pol_eff_dt"]).dt.days.to_numpy()
-    offset = (rng.random(len(rows)) * span).astype(int)
-    rows["evt_dt"] = (rows["pol_eff_dt"] + pd.to_timedelta(offset, unit="D")).where(claim_cnt > 0)
 
     # --- endorsement and cancellation rows (BOP/BMQ) ------------------------
     not_cmq = ~rows["src"].eq("CMQ")
@@ -209,14 +206,13 @@ def generate_clean(n_policies: int, rng: np.random.Generator) -> pd.DataFrame:
     for extra in (endo, canc):
         extra["claim_cnt"] = 0
         extra["allocation"] = 0.0
-        extra["evt_dt"] = pd.NaT
 
     out = pd.concat([rows, endo, canc], ignore_index=True)
     cols = ["src", "pol_num", "pol_eff_dt", "pol_exp_dt", "covg_type_desc", "class_cd_std", "expo_amt",
             "expn_bs_std", "rsk_loc_id", "rsk_itm_id", "loc_st_abbr", "loc_zipcd", "trr_cd", "mm_seg_cd",
             "each_occ_lmt_amt", "genl_ag_lmt_amt", "tot_wrtn_prm_amt",
             "pol_stat", "bi_ded_amt", "pd_ded_amt", "csl_ded_amt", "tx_type_nm", "allocation",
-            "claim_cnt", "evt_dt"]
+            "claim_cnt"]
     out = out[cols].sort_values(["src", "pol_num", "rsk_loc_id", "rsk_itm_id", "covg_type_desc"]).reset_index(drop=True)
     out["class_cd_std"] = out["class_cd_std"].astype("object")
     return out
@@ -244,7 +240,6 @@ def inject_issues(df: pd.DataFrame, rng: np.random.Generator):
     bmq_idx = df.index[df["src"].eq("BMQ")]
     df.loc[pick(bmq_idx, int(0.02 * len(bmq_idx))), "expn_bs_std"] = "UNK"
     small_claims = df.index[(df["claim_cnt"] > 0) & (df["allocation"] < df.loc[df["claim_cnt"] > 0, "allocation"].median())]
-    df.loc[pick(small_claims, int(0.01 * (df["claim_cnt"] > 0).sum())), "evt_dt"] = pd.NaT
 
     # distribution issues
     df.loc[df["src"].eq("BMQ") & pol_yr.eq(2019), "tot_wrtn_prm_amt"] *= 100
@@ -275,11 +270,6 @@ def inject_issues(df: pd.DataFrame, rng: np.random.Generator):
     bad_pols = pick(df["pol_num"].unique(), 15)
     m = df["pol_num"].isin(bad_pols)
     df.loc[m, "pol_exp_dt"] = df.loc[m, "pol_eff_dt"] - pd.Timedelta(days=30)
-    late_eff = df.index[(df["claim_cnt"] > 0) & df["evt_dt"].notna() & (df["pol_eff_dt"].dt.dayofyear > 40)
-                        & (df["allocation"] < df.loc[df["claim_cnt"] > 0, "allocation"].median())
-                        & ~m]
-    ev = pick(late_eff, 25)
-    df.loc[ev, "evt_dt"] = df.loc[ev, "pol_eff_dt"] - pd.Timedelta(days=20)
 
     df = pd.concat([df, dups], ignore_index=True)
     return df.reset_index(drop=True)

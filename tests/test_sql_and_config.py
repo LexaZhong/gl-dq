@@ -20,7 +20,8 @@ def test_unknown_column_rejected(ctx_injected):
 def test_derived_columns_expand(ctx_injected):
     s = ctx_injected.schema
     assert s.ref("pol_yr") == "(year(pol_eff_dt))"
-    assert s.ref("loss_yr") == "(year(evt_dt))"
+    # loss is aggregated onto the policy record, so there is no event date and no loss year
+    assert not s.has("loss_yr") and not s.has("evt_dt")
     sql = ctx_injected.render_sql("agg_by_dims.sql.j2", dims=["src", "pol_yr"], measures={"p": s.ref("tot_wrtn_prm_amt")}, where=None)
     assert '(year(pol_eff_dt)) AS "pol_yr"' in sql
     df = ctx_injected.db.query(sql)

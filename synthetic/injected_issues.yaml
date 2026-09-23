@@ -26,9 +26,6 @@ issues:
     description: BMQ expn_bs_std holds the sentinel 'UNK' on 2% of rows.
     expect: {check: missing_rate, variable: expn_bs_std, segment: {src: BMQ}}
 
-  - id: miss_evt_dt_with_claims
-    description: evt_dt is null on 1% of rows that have claims.
-    expect: {check: missing_rate, variable: evt_dt}
 
   - id: dist_bmq_2019_cents
     description: BMQ policy-year 2019 premium recorded in cents (x100).
@@ -70,6 +67,3 @@ issues:
     description: 15 policies with pol_exp_dt before pol_eff_dt.
     expect: {check: business_rules, item: exp_after_eff}
 
-  - id: date_evt_outside_period
-    description: 25 claim rows with evt_dt before the policy effective date.
-    expect: {check: business_rules, item: evt_in_policy_period}

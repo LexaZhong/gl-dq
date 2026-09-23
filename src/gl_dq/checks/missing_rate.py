@@ -23,7 +23,7 @@ class MissingRate(Check):
     title = "Missing rate"
     icon = "🔲"
     description = ("Share of missing values per variable and segment. 'Missing' means null, plus blank strings and any "
-                   "configured sentinel values. `applies_when` limits the denominator, e.g. evt_dt only where claims > 0.")
+                   "configured sentinel values. `applies_when` limits the denominator, e.g. a deductible only where the coverage uses one.")
     default_order = 20
 
     class Config(CheckConfig):

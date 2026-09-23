@@ -124,8 +124,16 @@ class LossSummary(Check):
         c1, c2, c3 = st.columns([3, 1, 1])
         opts = self.segment_options()
         segs = c1.multiselect("Segment by", opts, default=[s for s in a.segments if s in opts], key="la_segs")
-        basis = c2.selectbox("LR basis year", [x for x in ["pol_yr", "loss_yr"] if self.schema.has(x)],
-                             index=0 if a.lr_basis == "pol_yr" else 1, key="la_basis")
+        # a loss-year basis needs a loss date; where loss is aggregated onto the policy record there
+        # is none, so the choice does not exist and no widget is shown for it
+        years = [x for x in ("pol_yr", "loss_yr") if self.schema.has(x)] or [a.lr_basis]
+        if len(years) > 1:
+            basis = c2.selectbox("LR basis year", years, index=years.index(a.lr_basis) if a.lr_basis in years else 0,
+                                 key="la_basis")
+        else:
+            basis = years[0]
+            c2.markdown(f"<div style='padding-top:1.9rem'>Basis year <code>{basis}</code></div>",
+                        unsafe_allow_html=True)
         cap = c3.number_input("LR cap", 0.5, 50.0, a.lr_cap, 0.5, key="la_cap")
         spec = a.model_copy(update={"segments": segs, "lr_basis": basis, "lr_cap": cap})
         if basis != "pol_yr":

@@ -8,13 +8,6 @@ rules:
     violation: "pol_exp_dt < pol_eff_dt"
     warn: 0.0
     fail: 0.0005
-  - id: evt_in_policy_period
-    description: Loss event date must fall inside the policy period
-    variables: [evt_dt]
-    applies_when: "evt_dt IS NOT NULL"
-    violation: "evt_dt < pol_eff_dt OR evt_dt > pol_exp_dt"
-    warn: 0.0
-    fail: 0.005
   - id: ded_bi_pd_xor_csl
     description: Split BI/PD deductibles and CSL deductible are mutually exclusive
     variables: [csl_ded_amt, bi_ded_amt, pd_ded_amt]
