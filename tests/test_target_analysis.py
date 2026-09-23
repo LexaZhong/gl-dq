@@ -123,3 +123,89 @@ def test_run_uses_the_configured_target_and_notes_the_base(ctx_injected):
     res = chk.run()
     assert any("exposure base" in m for m in res.messages)
     assert not res.findings.empty and "oneway::frequency" in res.tables
+
+
+# ---- binning schemes -------------------------------------------------------------------
+from gl_dq.core.binning import BinningLibrary, BinningSet, BinSpec, load_binnings, resolve, save_binnings  # noqa: E402
+
+
+def test_bin_labels_sort_on_an_axis_and_cover_the_line():
+    s = BinSpec(variable="x", name="n", method="custom", cuts=[1000, 5000, 25000])
+    assert s.n_bins == 4
+    assert s.labels() == ["01. < 1K", "02. 1K to 5K", "03. 5K to 25K", "04. >= 25K"]
+    assert sorted(s.labels()) == s.labels(), "zero-padded so a text axis keeps bin order"
+    sql = s.case_sql('"x"', lambda v: repr(v) if isinstance(v, float) else f"'{v}'")
+    assert sql.startswith("CASE WHEN \"x\" IS NULL THEN '<null>'") and sql.count("WHEN") == 4
+
+
+def test_cut_points_are_sorted_and_deduplicated():
+    s = BinSpec(variable="x", name="n", method="custom", cuts=[5000, 1000, 5000])
+    assert s.cuts == [1000.0, 5000.0]
+
+
+def test_quantiles_of_a_discrete_column_collapse_to_what_is_achievable(chk):
+    """Most policies sit on the same limit, so the 20th and 40th percentile are the same number.
+    Keeping both would make a bin that can never be reached."""
+    s = resolve(chk, BinSpec(variable="each_occ_lmt_amt", name="q", method="quantile", bins=5))
+    assert s.cuts == sorted(set(s.cuts)) and len(s.cuts) < 4
+    assert s.n_bins == len(s.cuts) + 1
+    assert all(a < b for a, b in zip(s.labels(), s.labels()[1:]))
+
+
+def test_binning_changes_the_grouping_not_the_book(chk):
+    s = resolve(chk, BinSpec(variable="each_occ_lmt_amt", name="q", method="quantile", bins=5))
+    binned = chk.profile(("each_occ_lmt_amt",), "loss_ratio", binning=BinningSet(specs=[s]))["oneway"]
+    raw = chk.profile(("each_occ_lmt_amt",), "loss_ratio")["oneway"]
+    assert set(binned["level_a"]) == set(s.labels())
+    assert len(binned) < len(raw)
+    for c in ("premium", "loss", "claims", "records"):  # the same book, cut differently
+        assert binned[c].sum() == pytest.approx(raw[c].sum())
+
+
+def test_equal_width_and_custom_bins(chk):
+    eq = resolve(chk, BinSpec(variable="expo_amt", name="w", method="equal_width", bins=4))
+    assert len(eq.cuts) == 3 and all(a < b for a, b in zip(eq.cuts, eq.cuts[1:]))
+    gaps = np.diff([eq.cuts[0] - (eq.cuts[1] - eq.cuts[0]), *eq.cuts])
+    assert np.allclose(gaps, gaps[0])  # equal width by construction
+    custom = resolve(chk, BinSpec(variable="expo_amt", name="c", method="custom", cuts=[100, 1000]))
+    assert custom.cuts == [100.0, 1000.0]  # custom cuts are never re-derived
+
+
+def test_evaluate_scores_a_scheme_for_the_current_target(chk):
+    s = resolve(chk, BinSpec(variable="each_occ_lmt_amt", name="q", method="quantile", bins=5))
+    raw = chk.evaluate_binning("each_occ_lmt_amt", "loss_ratio")
+    binned = chk.evaluate_binning("each_occ_lmt_amt", "loss_ratio", spec=s)
+    for m in (raw, binned):
+        assert m["n_bins"] > 0 and 0 <= m["credible_weight"] <= 1
+        assert np.isfinite(m["signal"]) and m["signal"] >= 0
+    # collapsing a column that already separates the target loses signal, and the table must say so
+    assert binned["n_bins"] < raw["n_bins"] and binned["signal"] < raw["signal"]
+
+
+def test_a_scheme_is_frozen_when_saved(ctx_injected, tmp_path, chk):
+    """A quantile scheme re-derived against changed data is a different scheme; the cuts travel."""
+    from gl_dq.core.storage import make_storage
+
+    spec = resolve(chk, BinSpec(variable="each_occ_lmt_amt", name="quintiles", method="quantile",
+                                bins=5, description="first try")).stamped("ds@test.com")
+    assert spec.author == "ds@test.com" and spec.created
+    store = make_storage(str(tmp_path), tmp_path)
+    save_binnings(store, BinningLibrary().put(spec))
+    back = load_binnings(store).get("each_occ_lmt_amt", "quintiles")
+    assert back.cuts == spec.cuts and back.method == "quantile" and back.description == "first try"
+
+
+def test_library_keeps_one_scheme_per_name():
+    lib = BinningLibrary().put(BinSpec(variable="x", name="a", method="custom", cuts=[1]))
+    lib = lib.put(BinSpec(variable="x", name="b", method="custom", cuts=[2]))
+    lib = lib.put(BinSpec(variable="x", name="a", method="custom", cuts=[9]))  # replaces, not duplicates
+    assert [b.name for b in lib.for_variable("x")] == ["b", "a"]
+    assert lib.get("x", "a").cuts == [9.0]
+    assert lib.drop("x", "a").for_variable("x") == [BinSpec(variable="x", name="b", method="custom", cuts=[2])]
+    with pytest.raises(ValueError):
+        BinningLibrary(binnings=[BinSpec(variable="x", name="a", method="custom", cuts=[1]),
+                                 BinSpec(variable="x", name="a", method="custom", cuts=[2])])
+
+
+def test_shipped_binning_library_is_empty_and_valid(ctx_injected):
+    assert load_binnings(ctx_injected.config_store).binnings == []

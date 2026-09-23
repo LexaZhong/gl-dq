@@ -165,3 +165,41 @@ def test_summary_filter_options_follow_the_dimensions(refreshed, monkeypatch):
     at.multiselect(key="sum_dims").set_value(["loc_st_abbr"]).run()
     labels = {m.label for m in at.multiselect}
     assert page_filter("loc_st_abbr") in labels and page_filter("covg_type_desc") not in labels
+
+
+def test_binning_workbench_saves_a_scheme_with_frozen_cuts(refreshed, monkeypatch, tmp_path):
+    """Driving the page, not just the maths: previewing a draft then saving it under a name must
+    write the resolved cuts, which is what makes an experiment reproducible."""
+    import shutil
+
+    import yaml as _yaml
+
+    from gl_dq.ui import state
+
+    cfg = tmp_path / "config"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "config", cfg)
+    monkeypatch.setenv("DQ_CONFIG_DIR", str(cfg))
+    state.clear_data_caches()  # the Context is cached; rebuild it against the temp config
+    try:
+        at = _open("target_analysis", monkeypatch)
+        at.multiselect(key="ta_pick_vars").set_value(["src", "each_occ_lmt_amt"]).run()
+        at.selectbox(key="ta_uni_var").set_value("each_occ_lmt_amt").run()
+        at.selectbox(key="ta_bin_m_each_occ_lmt_amt").set_value("quantile").run()
+        at.number_input(key="ta_bin_n_each_occ_lmt_amt").set_value(4).run()
+
+        next(b for b in at.button if b.key == "ta_bin_prev_each_occ_lmt_amt").click().run()
+        assert not at.exception, [e.value for e in at.exception]
+        # the unsaved draft has to stay selectable, or the next rerun crashes on it
+        assert any("unsaved draft" in c.value for c in at.caption)
+
+        at.text_input(key="ta_bin_name_each_occ_lmt_amt").set_value("quartiles").run()
+        next(b for b in at.button if b.key == "ta_bin_save_each_occ_lmt_amt").click().run()
+        assert not at.exception, [e.value for e in at.exception]
+        assert "quartiles" in at.selectbox(key="ta_bin_pick_each_occ_lmt_amt").options
+
+        saved = _yaml.safe_load((cfg / "binnings.yaml").read_text(encoding="utf-8"))["binnings"]
+        assert len(saved) == 1 and saved[0]["name"] == "quartiles"
+        assert saved[0]["cuts"], "the cut points must be frozen into the scheme, not re-derived later"
+        assert saved[0]["author"] and saved[0]["created"]
+    finally:
+        state.clear_data_caches()  # leave the shared context pointing back at the repo config

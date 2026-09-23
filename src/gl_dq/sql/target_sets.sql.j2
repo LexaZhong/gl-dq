@@ -5,11 +5,14 @@
    a distinction that matters here, because a null level is itself a finding.
 
    Every measure is a SUM, so levels can be folded together afterwards (top N plus <other>) without
-   going back to the warehouse. #}
+   going back to the warehouse.
+
+   `exprs` is the column, or the CASE that puts it in a bin - the grouping, the output column and
+   GROUPING() all use the same expression. #}
 SELECT
 {% for v in vars %}
-  {{ sel(v) }},
-  GROUPING({{ c(v) }}) AS {{ q("g__" ~ v) }},
+  {{ exprs[v] }} AS {{ q(v) }},
+  GROUPING({{ exprs[v] }}) AS {{ q("g__" ~ v) }},
 {% endfor %}
   COUNT(*) AS records,
   SUM({{ premium }}) AS premium,
@@ -19,6 +22,6 @@ SELECT
 FROM {{ table }}
 {% if where %}WHERE {{ where }}{% endif %}
 GROUP BY GROUPING SETS (
-  {% for s in sets %}({% for v in s %}{{ c(v) }}{{ ", " if not loop.last }}{% endfor %}){{ "," if not loop.last }}
+  {% for s in sets %}({% for v in s %}{{ exprs[v] }}{{ ", " if not loop.last }}{% endfor %}){{ "," if not loop.last }}
   {% endfor %}
 )

@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from gl_dq.checks.base import Check, CheckResult
 from gl_dq.checks.segment_mix import credibility
+from gl_dq.core.binning import BinningSet, BinSpec
 from gl_dq.core.config import CheckConfig
 from gl_dq.core.registry import register_check
 from gl_dq.core.results import _fmt, grade
@@ -107,8 +108,12 @@ class TargetAnalysis(Check):
 
     # ---- compute -----------------------------------------------------------------------
     def profile(self, variables: tuple[str, ...], target: str, base: str | None = None,
-                max_levels: int | None = None) -> dict[str, pd.DataFrame]:
-        """Total, one-ways and two-ways for one target, in a single query."""
+                max_levels: int | None = None, binning: BinningSet | None = None) -> dict[str, pd.DataFrame]:
+        """Total, one-ways and two-ways for one target, in a single query.
+
+        `binning` replaces a variable's raw values with its bin label, in the grouping itself - so a
+        re-binned view costs exactly the same one query.
+        """
         spec, s, m = TARGETS[target], self.schema, self.project.measures
         variables = s.validate([v for v in dict.fromkeys(variables) if v])
         max_levels = max_levels or self.cfg.max_levels
@@ -117,11 +122,44 @@ class TargetAnalysis(Check):
 
         sets = [[]] + [[v] for v in variables] + [list(p) for p in itertools.combinations(variables, 2)]
         where = self._where(base)
+        exprs = {v: self._expr(v, binning) for v in variables}
         raw = self.query(f"{target} by {', '.join(variables)}", self.ctx.render_sql(
-            "target_sets.sql.j2", vars=variables, sets=sets, where=where,
+            "target_sets.sql.j2", vars=variables, sets=sets, where=where, exprs=exprs,
             premium=s.ref(m.written_premium), loss=s.ref(m.loss), claims=s.ref(m.claim_count),
             exposure=s.ref(m.exposure)))
-        return self._shape(raw, variables, spec, max_levels)
+        out = self._shape(raw, variables, spec, max_levels)
+        out["binning"] = pd.DataFrame([{"variable": v, "scheme": (b.name if (b := (binning or BinningSet()).get(v))
+                                                                  and b.method != "categorical" else ""),
+                                        "summary": b.summary() if b else "raw levels"} for v in variables])
+        return out
+
+    def _expr(self, variable: str, binning: BinningSet | None) -> str:
+        """The grouping expression for a variable: the column, or the CASE that bins it."""
+        spec = (binning or BinningSet()).get(variable)
+        ref = self.schema.ref(variable)
+        if spec is None or spec.method == "categorical" or not spec.resolved:
+            return ref
+        return spec.case_sql(ref, self.ctx.dialect.lit)
+
+    def evaluate_binning(self, variable: str, target: str, base: str | None = None,
+                         spec: BinSpec | None = None) -> dict:
+        """How well one scheme separates the target - the number an experiment is judged on."""
+        binning = BinningSet(specs=[spec]) if spec is not None else None
+        t = self.profile((variable,), target, base=base, max_levels=200, binning=binning)
+        part = t["oneway"]
+        if part.empty:
+            return {"n_bins": 0, "signal": float("nan"), "spread": float("nan"), "credible_weight": float("nan")}
+        credible = part[part["claims"] >= self.cfg.min_claims]
+        rel = credible["relativity"].replace([np.inf, -np.inf], np.nan)
+        ok = rel.notna() & (rel > 0) & (credible["weight"] > 0)
+        signal = (float(np.sqrt(np.average(np.log(rel[ok]) ** 2, weights=credible.loc[ok, "weight"])))
+                  if ok.any() else float("nan"))
+        return {"n_bins": int(len(part)),
+                "n_credible": int(len(credible)),
+                "signal": signal,
+                "spread": float(rel[ok].max() / rel[ok].min()) if ok.sum() > 1 else float("nan"),
+                "credible_weight": float(credible["weight"].sum() / part["weight"].sum())
+                if part["weight"].sum() else float("nan")}
 
     def _where(self, base: str | None) -> str | None:
         parts = [self.cfg.where]
@@ -315,7 +353,7 @@ class TargetAnalysis(Check):
 
         with st.spinner("Aggregating…"):
             t = state.cached_method(self.name, cfg, "profile", variables=tuple(variables), target=target,
-                                    base=base)
+                                    base=base, binning=state.binning_set(variables))
         if t["oneway"].empty:
             st.info("No rows for this selection.")
             return
@@ -326,43 +364,65 @@ class TargetAnalysis(Check):
 
         tab_uni, tab_int = st.tabs(["Univariate", "🔀 Interactions"])
         with tab_uni:
-            self._render_univariate(st, t, variables, spec, overall, min_claims, target)
+            self._render_univariate(st, t, variables, spec, overall, min_claims, target, base)
         with tab_int:
             self._render_interactions(st, t, variables, spec, overall, min_claims)
 
     # -- univariate ----------------------------------------------------------------------
-    def _render_univariate(self, st, t, variables, spec, overall, min_claims, target):
+    def _render_univariate(self, st, t, variables, spec, overall, min_claims, target, base):
         from plotly.subplots import make_subplots
 
         from gl_dq.ui.components import status_table
         from gl_dq.ui.theme import CATEGORICAL, NEUTRAL, STATUS, style
 
-        var = st.selectbox("Variable", variables, key="ta_uni_var")
-        part = t["oneway"][t["oneway"]["var_a"] == var].copy()
-        part = part.sort_values("weight", ascending=False)
-        order = [str(x) for x in part["level_a"]]
-        credible = part["claims"] >= min_claims
+        c1, c2 = st.columns([2, 2])
+        var = c1.selectbox("Variable", variables, key="ta_uni_var")
+        weight_col = c2.selectbox(
+            "Weight the bars by", list(MEASURES), index=list(MEASURES).index(spec.denominator),
+            key="ta_uni_weight",
+            help=f"Defaults to `{spec.denominator}`, this target's own denominator - the volume that makes "
+                 "a level's estimate trustworthy. Any other measure is available for context.")
 
-        # two panels, not two y axes: the target above, the weight that earns it below
+        from gl_dq.core.results import value_sort_key
+
+        part = t["oneway"][t["oneway"]["var_a"] == var].copy()
+        binned = self._binning_row(t, var)
+        # a line is only readable along an ordered axis: bins in bin order, a numeric column in
+        # numeric order (500K before 1M), and only a true category by size
+        if binned or self.schema.is_numeric(var):
+            part = part.sort_values("level_a", key=lambda c: c.map(value_sort_key))
+        else:
+            part = part.sort_values("weight", ascending=False)
+        order = [str(x) for x in part["level_a"]]
+        credible = (part["claims"] >= min_claims).to_numpy()
+
+        # the target as a line, the weight as bars - stacked on a shared x rather than sharing one
+        # plot, so two very different scales are never read off the same axis
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
                             row_heights=[0.62, 0.38])
-        fig.add_bar(x=part["level_a"], y=part["value"], row=1, col=1, name=spec.label,
-                    marker_color=np.where(credible, CATEGORICAL[0], NEUTRAL),
-                    customdata=np.stack([part["claims"], part["z"], part["relativity"]], axis=-1),
-                    hovertemplate="%{x}<br>value %{y:,.4f}<br>claims %{customdata[0]:,.0f}"
-                                  "<br>Z %{customdata[1]:.2f}<br>relativity %{customdata[2]:.2f}x<extra></extra>")
+        fig.add_scatter(x=part["level_a"], y=part["value"], row=1, col=1, mode="lines+markers",
+                        name=spec.label, line=dict(color=CATEGORICAL[0], width=2),
+                        marker=dict(size=np.where(credible, 10, 7),
+                                    color=np.where(credible, CATEGORICAL[0], NEUTRAL),
+                                    line=dict(width=1, color="white")),
+                        customdata=np.stack([part["claims"], part["z"], part["relativity"]], axis=-1),
+                        hovertemplate="%{x}<br>value %{y:,.4f}<br>claims %{customdata[0]:,.0f}"
+                                      "<br>Z %{customdata[1]:.2f}<br>relativity %{customdata[2]:.2f}x<extra></extra>")
         fig.add_hline(y=overall, line_dash="dash", line_color=STATUS["warn"], row=1, col=1,
                       annotation_text=f"portfolio {spec.fmt.format(overall)}", annotation_position="top left")
-        fig.add_bar(x=part["level_a"], y=part["weight"], row=2, col=1, name="weight",
-                    marker_color=CATEGORICAL[2], hovertemplate="%{x}<br>weight %{y:,.0f}<extra></extra>")
+        fig.add_bar(x=part["level_a"], y=part[weight_col], row=2, col=1, name=weight_col,
+                    marker_color=CATEGORICAL[2],
+                    hovertemplate="%{x}<br>" + weight_col + " %{y:,.0f}<extra></extra>")
         fig.update_xaxes(categoryorder="array", categoryarray=order, tickangle=-35, row=2, col=1)
         fig.update_yaxes(title_text=spec.label.split(" (")[0], row=1, col=1)
-        fig.update_yaxes(title_text=f"weight ({spec.denominator})", row=2, col=1)
+        fig.update_yaxes(title_text=weight_col, row=2, col=1)
         fig.update_layout(showlegend=False)
-        st.plotly_chart(style(fig, 460, f"{spec.label} by {var}"), use_container_width=True)
-        st.caption(f"Grey bars are levels with fewer than {min_claims} claims - too thin to read as signal. "
-                   f"The weight below is `{spec.denominator}`, the target's own denominator: a level is only "
-                   f"as trustworthy as the volume underneath it.")
+        st.plotly_chart(style(fig, 470, f"{spec.label} by {var}"), use_container_width=True)
+        st.caption(f"Small grey markers are levels with fewer than {min_claims} claims - too thin to read as "
+                   f"signal. The bars are `{weight_col}`: a level is only as trustworthy as the volume "
+                   f"underneath it.")
+
+        self._binning_controls(st, var, target, base, t)
 
         view = part.assign(level=part["level_a"])[
             ["level", "weight", "weight_share", "claims", "z", "value", "relativity", "records"]]
@@ -376,6 +436,133 @@ class TargetAnalysis(Check):
         if not live.empty:
             status_table(live[live["variable"] == var][["item", "metric", "value", "threshold",
                                                         "status", "detail"]], key=f"ta_find_{var}")
+
+    @staticmethod
+    def _binning_row(t, var) -> bool:
+        b = t.get("binning")
+        if b is None or b.empty:
+            return False
+        row = b[b["variable"] == var]
+        return bool(len(row)) and bool(row.iloc[0]["scheme"])
+
+    # -- binning: the experiment workbench ------------------------------------------------
+    def _binning_controls(self, st, var, target, base, t):
+        """Try a binning, see it immediately, save it with a name, compare it against the others."""
+        from gl_dq.core.binning import METHOD_LABELS, BinSpec, save_binnings
+        from gl_dq.ui import state
+
+        if not self.schema.is_numeric(var):
+            return
+        lib = state.session_binnings()
+        saved = lib.for_variable(var)
+        current = state.current_binning(var)
+
+        with st.expander(f"🧪 Binning for `{var}`" + (f" — **{current.name}**" if current else " — raw levels"),
+                         expanded=False):
+            st.caption("A GLM is fitted by trying a variable several ways. Each scheme below is saved with "
+                       "its resolved cut points, so it can be reused on another target, compared against the "
+                       "others, and handed to the modelling pipeline unchanged.")
+            names = ["(raw levels)"] + [b.name for b in saved]
+            if current is not None and current.name not in names:
+                names.append(current.name)  # an unsaved draft from Preview
+            pick = st.selectbox("Scheme", names,
+                                index=names.index(current.name) if current and current.name in names else 0,
+                                key=f"ta_bin_pick_{var}")
+            if pick != (current.name if current else "(raw levels)"):
+                state.set_binning(var, lib.get(var, pick) if pick != "(raw levels)" else None)
+                st.rerun()
+
+            st.markdown("**Try another**")
+            c1, c2, c3 = st.columns([2, 1, 3])
+            method = c1.selectbox("Method", [m for m in METHOD_LABELS if m != "categorical"],
+                                  format_func=METHOD_LABELS.get, key=f"ta_bin_m_{var}")
+            n_bins = int(c2.number_input("Bins", 2, 50, 5, key=f"ta_bin_n_{var}",
+                                         disabled=method == "custom"))
+            cuts_text = c3.text_input("Cut points (comma-separated)", key=f"ta_bin_c_{var}",
+                                      placeholder="1000, 5000, 25000",
+                                      disabled=method != "custom",
+                                      help="Interior edges: 3 cuts make 4 bins")
+            try:
+                cuts = [float(x.strip()) for x in cuts_text.split(",") if x.strip()]
+            except ValueError:
+                st.error("Cut points must be numbers.")
+                return
+            draft = None
+            try:
+                draft = BinSpec(variable=var, name="(draft)", method=method, bins=n_bins, cuts=cuts)
+            except Exception as e:  # noqa: BLE001  (a custom scheme with no cuts yet)
+                st.caption(str(e))
+
+            b1, b2, b3 = st.columns([1, 1.4, 3])
+            if draft is not None and b1.button("👁 Preview", key=f"ta_bin_prev_{var}"):
+                state.set_binning(var, state.cached_method(self.name, self.cfg, "resolve_binning",
+                                                           spec=draft, base=base))
+                st.rerun()
+            name = b3.text_input("Save as", key=f"ta_bin_name_{var}", placeholder="quintiles",
+                                 label_visibility="collapsed")
+            live = state.current_binning(var)
+            if b2.button("💾 Save scheme", key=f"ta_bin_save_{var}", type="primary",
+                         disabled=not (name and live)):
+                spec = live.model_copy(update={"name": name}).stamped(state.current_user())
+                state.set_session_binnings(lib.put(spec))
+                save_binnings(self.ctx.config_store, state.session_binnings())
+                state.set_binning(var, spec)
+                st.toast(f"Saved binning {var}/{name}", icon="🧪")
+                st.rerun()
+            if live is not None:
+                st.caption(f"In play: `{live.summary()}`"
+                           + (f" · {live.author} on {live.created[:10]}" if live.created else " · unsaved draft"))
+
+            if saved:
+                st.markdown("**Experiments** — every saved scheme for this variable, scored on the "
+                            f"current target ({TARGETS[target].label.split(' (')[0].lower()})")
+                rows = []
+                for b in [None] + saved:
+                    m = state.cached_method(self.name, self.cfg, "evaluate_binning", variable=var,
+                                            target=target, base=base, spec=b)
+                    rows.append({"scheme": b.name if b else "(raw levels)",
+                                 "method": b.method if b else "categorical",
+                                 "cuts": b.summary() if b else "", **m,
+                                 "why": b.description if b else "", "author": b.author if b else "",
+                                 "created": (b.created or "")[:10] if b else ""})
+                rank = pd.DataFrame(rows).sort_values("signal", ascending=False, ignore_index=True)
+                from gl_dq.ui.components import status_table
+
+                status_table(rank, percent_cols=["credible_weight"],
+                             number_formats={"signal": "%.3f", "spread": "%.2f"}, key=f"ta_bin_rank_{var}")
+                st.caption("`signal` is how far the bins separate the target, weighted and counting only "
+                           "credible bins - higher separates more. Read it with `credible_weight` and "
+                           "`n_bins`: more bins almost always raise signal, and the thin ones are noise.")
+
+                adopt = st.selectbox("Adopt for modelling", [b.name for b in saved], key=f"ta_bin_adopt_{var}")
+                why = st.text_input("Why this one", key=f"ta_bin_why_{var}",
+                                    placeholder="Separates loss ratio, every bin credible")
+                if st.button("➕ Add to recommended preprocessing", key=f"ta_bin_pp_{var}"):
+                    self._adopt_binning(st, lib.get(var, adopt), why)
+
+    def resolve_binning(self, spec: BinSpec, base: str | None = None) -> BinSpec:
+        """Cut points from the data - computed once, then frozen into the scheme."""
+        from gl_dq.core.binning import resolve
+
+        return resolve(self, spec, self._where(base))
+
+    def _adopt_binning(self, st, spec, why: str):
+        """A chosen scheme becomes a preprocessing step, cuts and all, for the modelling pipeline."""
+        from gl_dq.core.knowledge import PreprocessingStep
+        from gl_dq.ui import state
+
+        if spec is None:
+            return
+        wf = self.ctx.workflow
+        step = PreprocessingStep(
+            op="bin", params={"method": spec.method, "n_bins": spec.n_bins,
+                              "cuts": ", ".join(str(c) for c in spec.cuts)},
+            rationale=(why or spec.description or f"binning scheme '{spec.name}'"),
+            author=state.current_user())
+        target_stage = next((s.key for s in wf.stages if s.requires_preprocessing), None)
+        self.ctx.knowledge.add_preprocessing_step(spec.variable, step, state.current_user(),
+                                                  set_status=target_stage)
+        st.toast(f"{spec.variable}: binning '{spec.name}' added to recommended preprocessing", icon="🧰")
 
     # -- interactions --------------------------------------------------------------------
     def _render_interactions(self, st, t, variables, spec, overall, min_claims):

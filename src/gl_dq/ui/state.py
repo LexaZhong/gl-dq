@@ -10,6 +10,7 @@ import streamlit as st
 from pydantic import BaseModel
 
 from gl_dq.core.context import load_context
+from gl_dq.core.binning import BinningLibrary, BinningSet, BinSpec, load_binnings
 from gl_dq.core.filters import FilterSet
 
 
@@ -97,6 +98,37 @@ def reset_session_config(name: str) -> None:
     st.session_state.pop(f"cfg::{name}", None)
     for k in st.session_state.pop(f"widgets::{name}", []):
         st.session_state.pop(k, None)
+
+
+# ---- binning schemes (the library on disk, plus what this session has in play) --------
+def session_binnings() -> BinningLibrary:
+    """The saved library, copied per session so an unsaved edit is never shared."""
+    if "binning_library" not in st.session_state:
+        st.session_state["binning_library"] = load_binnings(_context(profile()).config_store)
+    return st.session_state["binning_library"]
+
+
+def set_session_binnings(lib: BinningLibrary) -> None:
+    st.session_state["binning_library"] = lib
+
+
+def current_binning(variable: str) -> BinSpec | None:
+    """The scheme this session is looking at for one variable (None = raw levels)."""
+    return st.session_state.get("binning_in_play", {}).get(variable)
+
+
+def set_binning(variable: str, spec: BinSpec | None) -> None:
+    in_play = dict(st.session_state.get("binning_in_play", {}))
+    if spec is None:
+        in_play.pop(variable, None)
+    else:
+        in_play[variable] = spec
+    st.session_state["binning_in_play"] = in_play
+
+
+def binning_set(variables) -> BinningSet:
+    """The schemes in play for these variables, as one cache-keyable model."""
+    return BinningSet(specs=[s for s in (current_binning(v) for v in variables) if s is not None])
 
 
 # ---- cached computations -------------------------------------------------------------
