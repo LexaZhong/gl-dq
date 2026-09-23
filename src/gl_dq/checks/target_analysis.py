@@ -97,7 +97,10 @@ class TargetAnalysis(Check):
     default_order = 85
 
     class Config(CheckConfig):
-        variables: list[str] = []
+        variables: list[str] = []  # the default selection, and what the refresh job runs
+        offer_all_columns: bool = True  # the picker offers every column, not just segment_candidates
+        exclude_variables: list[str] = []  # never offered, on top of the automatic exclusions
+        max_pair_levels: int = 200  # a column with more levels than this is not crossed with another
         default_target: str = "loss_ratio"
         max_levels: int = 12  # levels charted per variable; the rest fold into <other>
         min_claims: int = 10  # a cell below this is too thin to read as signal
@@ -108,7 +111,8 @@ class TargetAnalysis(Check):
 
     # ---- compute -----------------------------------------------------------------------
     def profile(self, variables: tuple[str, ...], target: str, base: str | None = None,
-                max_levels: int | None = None, binning: BinningSet | None = None) -> dict[str, pd.DataFrame]:
+                max_levels: int | None = None, binning: BinningSet | None = None,
+                pair_variables: tuple[str, ...] | None = None) -> dict[str, pd.DataFrame]:
         """Total, one-ways and two-ways for one target, in a single query.
 
         `binning` replaces a variable's raw values with its bin label, in the grouping itself - so a
@@ -120,7 +124,10 @@ class TargetAnalysis(Check):
         if not variables:
             return {k: pd.DataFrame() for k in ("total", "oneway", "pairs", "strength")}
 
-        sets = [[]] + [[v] for v in variables] + [list(p) for p in itertools.combinations(variables, 2)]
+        # a column with thousands of levels is fine on its own, but crossing two of them asks the
+        # warehouse for their product - so the pairs are taken over a restricted set
+        crossable = [v for v in variables if pair_variables is None or v in pair_variables]
+        sets = [[]] + [[v] for v in variables] + [list(p) for p in itertools.combinations(crossable, 2)]
         where = self._where(base)
         exprs = {v: self._expr(v, binning) for v in variables}
         raw = self.query(f"{target} by {', '.join(variables)}", self.ctx.render_sql(
@@ -160,6 +167,33 @@ class TargetAnalysis(Check):
                 "spread": float(rel[ok].max() / rel[ok].min()) if ok.sum() > 1 else float("nan"),
                 "credible_weight": float(credible["weight"].sum() / part["weight"].sum())
                 if part["weight"].sum() else float("nan")}
+
+    def candidate_variables(self) -> list[str]:
+        """What the picker offers: the curated list first, then everything else worth trying.
+
+        Two kinds of column are left out. The measures are the target's own numerator and
+        denominator, so a one-way of loss ratio by loss band is circular. The policy key identifies
+        a row rather than describing risk. Either can be forced back in by naming it in `variables`.
+        """
+        m, cfg = self.project.measures, self.cfg
+        # the four numeric measures only: the exposure BASE is a dimension, and one of the most
+        # useful rating variables there is
+        auto = {m.written_premium, m.loss, m.claim_count, m.exposure} | set(self.project.policy_key)
+        auto -= set(cfg.variables)  # naming a column explicitly overrides the automatic exclusion
+        drop = auto | set(cfg.exclude_variables)
+        curated = [c for c in self.segment_options() if c not in drop]
+        if not cfg.offer_all_columns:
+            return curated
+        rest = [c for c in self.schema.names() if c not in drop and c not in curated]
+        return curated + rest
+
+    def level_counts(self) -> dict[str, int]:
+        """Approximate level count per candidate column - what the picker labels and guards with."""
+        cols = self.candidate_variables()
+        if not cols:
+            return {}
+        r = self.query("level counts", self.ctx.render_sql("level_counts.sql.j2", vars=cols)).iloc[0]
+        return {c: int(r[c] or 0) for c in cols}
 
     def _where(self, base: str | None) -> str | None:
         parts = [self.cfg.where]
@@ -317,7 +351,7 @@ class TargetAnalysis(Check):
         import streamlit as st
 
         cfg = self.cfg
-        opts = [c for c in self.segment_options() if self.schema.has(c)]
+        opts = self.candidate_variables()
         if not opts:
             st.info("No rating variables available. Add `segment_candidates` to the profile.")
             return
@@ -339,9 +373,18 @@ class TargetAnalysis(Check):
         else:
             c2.markdown("<div style='padding-top:1.9rem;color:#898781'>no exposure base needed</div>",
                         unsafe_allow_html=True)
+        from gl_dq.ui import state as _state
+
+        try:
+            counts = _state.cached_method(self.name, cfg, "level_counts")
+        except Exception:  # noqa: BLE001  (the labels are a nicety, not a requirement)
+            counts = {}
         default_vars = [v for v in (cfg.variables or opts[:3]) if v in opts]
-        variables = c3.multiselect("Rating variables", opts, default=default_vars, key="ta_pick_vars",
-                                   help="Every pair of these is tested for interaction, in the same query")
+        variables = c3.multiselect(
+            "Rating variables", opts, default=default_vars, key="ta_pick_vars",
+            format_func=lambda v: f"{v} · {counts[v]:,} levels" if counts.get(v) else v,
+            help="Every column in the table except the measures the target is built from and the policy "
+                 "key. Each pair of the ones you pick is tested for interaction, in the same query.")
         min_claims = int(c4.number_input("Min claims", 0, 10000, cfg.min_claims, key="ta_pick_mc",
                                          help="Cells below this are shown greyed out and excluded from "
                                               "the interaction measure"))
@@ -351,9 +394,25 @@ class TargetAnalysis(Check):
 
         from gl_dq.ui import state
 
+        binning = state.binning_set(variables)
+
+        def too_big_to_cross(v: str) -> bool:
+            if counts.get(v, 0) <= cfg.max_pair_levels:
+                return False
+            spec = binning.get(v)  # a binned column is small whatever its raw cardinality
+            return spec is None or spec.method == "categorical"
+
+        heavy = [v for v in variables if too_big_to_cross(v)]
+        light = tuple(v for v in variables if v not in heavy)
         with st.spinner("Aggregating…"):
             t = state.cached_method(self.name, cfg, "profile", variables=tuple(variables), target=target,
-                                    base=base, binning=state.binning_set(variables))
+                                    base=base, binning=binning, pair_variables=light)
+        if heavy:
+            st.warning(f"**{', '.join(heavy)}** {'has' if len(heavy) == 1 else 'have'} more than "
+                       f"{cfg.max_pair_levels:,} levels, so {'it is' if len(heavy) == 1 else 'they are'} shown "
+                       "on its own but not crossed with anything — the product of two big columns is a table "
+                       "nobody can read and a query nobody should run. Bin it on the Univariate tab to bring "
+                       "it back into the interactions.")
         if t["oneway"].empty:
             st.info("No rows for this selection.")
             return

@@ -1,0 +1,10 @@
+{# How many levels each candidate column has, in one pass.
+
+   Approximate on purpose: this only decides what to offer, how to label it, and whether a column
+   is small enough to cross with another. An exact COUNT(DISTINCT) on 25 columns is not worth it. #}
+SELECT
+  COUNT(*) AS n_rows,
+{% for v in vars %}
+  {{ dialect.approx_distinct(c(v)) }} AS {{ q(v) }}{{ "," if not loop.last }}
+{% endfor %}
+FROM {{ table }}

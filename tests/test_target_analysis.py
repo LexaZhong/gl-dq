@@ -209,3 +209,50 @@ def test_library_keeps_one_scheme_per_name():
 
 def test_shipped_binning_library_is_empty_and_valid(ctx_injected):
     assert load_binnings(ctx_injected.config_store).binnings == []
+
+
+# ---- which variables the picker offers -------------------------------------------------
+def test_every_column_is_offered_except_the_ones_that_make_no_sense(chk, ctx_injected):
+    """Everything available, minus the measures the target is built from (a one-way of loss ratio
+    by loss band is circular) and the policy key (it identifies a row, it does not describe risk)."""
+    offered = chk.candidate_variables()
+    m = ctx_injected.project.measures
+    assert not (set(offered) & {m.written_premium, m.loss, m.claim_count, m.exposure}), \
+        "a target's own numerator or denominator cannot be a rating variable"
+    assert m.exposure_base in offered, "the exposure BASE is a dimension, not a measure"
+    assert not (set(offered) & set(ctx_injected.project.policy_key))
+    # everything else is there, including columns that were never in segment_candidates
+    assert {"bi_ded_amt", "pd_ded_amt", "csl_ded_amt", "loc_zipcd"} <= set(offered)
+    assert offered[:3] == ctx_injected.project.segment_candidates[:3], "the curated list comes first"
+
+
+def test_an_explicit_variable_overrides_the_automatic_exclusion(ctx_injected):
+    cfg = ctx_injected.check_config("target_analysis").model_copy(update={"variables": ["expo_amt"]})
+    chk = type(ctx_injected.make_check("target_analysis"))(ctx_injected, cfg)
+    assert "expo_amt" in chk.candidate_variables()
+
+
+def test_offer_all_columns_can_be_turned_off(ctx_injected):
+    cfg = ctx_injected.check_config("target_analysis").model_copy(update={"offer_all_columns": False})
+    chk = type(ctx_injected.make_check("target_analysis"))(ctx_injected, cfg)
+    assert "loc_zipcd" not in chk.candidate_variables()
+    assert "trr_cd" in chk.candidate_variables()  # still the curated list
+
+
+def test_level_counts_label_the_picker(chk):
+    counts = chk.level_counts()
+    assert counts["src"] == 3 and counts["covg_type_desc"] == 5
+    assert counts["loc_zipcd"] > 1000  # approximate, but the order of magnitude is what guards
+
+
+def test_a_high_cardinality_column_is_not_crossed_with_anything(ctx_injected):
+    """It is fine on its own; the product of two big columns is a query nobody should run."""
+    chk = ctx_injected.make_check("target_analysis")
+    t = chk.profile(("src", "loc_zipcd"), "loss_ratio", pair_variables=("src",))
+    sql = next(iter(chk._sql.values()))
+    assert '"src", "loc_zipcd"' not in sql.split("GROUPING SETS")[1]
+    assert t["strength"].empty and set(t["oneway"]["var_a"]) == {"src", "loc_zipcd"}
+
+    unguarded = ctx_injected.make_check("target_analysis")
+    unguarded.profile(("src", "loc_zipcd"), "loss_ratio")
+    assert '"src", "loc_zipcd"' in next(iter(unguarded._sql.values())).split("GROUPING SETS")[1]

@@ -27,6 +27,10 @@ class Dialect:
     def distinct_list(self, expr: str) -> str:
         raise NotImplementedError
 
+    def approx_distinct(self, expr: str) -> str:
+        """Approximate distinct count - same spelling in DuckDB and Databricks."""
+        return f"approx_count_distinct({expr})"
+
     def null_safe_eq(self, a: str, b: str) -> str:
         """Equality that treats NULL = NULL as true (dimension values are often null)."""
         raise NotImplementedError

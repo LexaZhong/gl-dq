@@ -1,9 +1,15 @@
 enabled: true
 order: 85
 category: Portfolio analysis
-# Rating variables offered on the page, and used by the refresh job. Every pair of them is tested
+# The default selection on the page, and what the refresh job runs. Every pair of them is tested
 # for interaction in the same query, so adding one costs nothing extra.
 variables: [src, covg_type_desc, expn_bs_std]
+# The picker offers every column in the table, not only segment_candidates. Automatically left out:
+# the measures the target is built from (a one-way of loss ratio by loss band is circular) and the
+# policy key. Naming a column in `variables` above overrides that.
+offer_all_columns: true
+exclude_variables: []        # never offered, whatever else is true
+max_pair_levels: 200         # above this a column is shown alone, not crossed - bin it to cross it
 default_target: loss_ratio   # frequency | severity | loss_cost | loss_ratio
 max_levels: 12               # levels charted per variable; the rest fold into <other>
 min_claims: 10               # a cell with fewer claims is shown greyed and left out of the measures
